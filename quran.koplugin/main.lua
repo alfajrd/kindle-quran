@@ -33,6 +33,31 @@ if not ok_db then
     DB = nil
 end
 
+-- Milestone 2 additions -- same soft-fail idiom as `require("db")` above.
+-- A plugin that throws while loading is skipped by KOReader without a
+-- word; failing soft here keeps M0/M1's two menu items working even if
+-- the M2 reader itself is broken on a given KOReader version.
+local ok_reader, Reader = pcall(require, "reader")
+if not ok_reader then
+    Reader = nil
+end
+
+local ok_settings, Settings = pcall(require, "settings")
+if not ok_settings then
+    Settings = nil
+end
+
+-- Milestone 2 entry points are four hard-coded test surahs plus "last
+-- position" -- see `.pipeline/spec.md` §5.1. Scaffolding. This is not a
+-- navigator and must not grow into one -- the navigator is Milestone 3.
+-- Delete this block when `navigator.lua` lands.
+--   1   = shorter than one screen; the basmala-is-ayah-1 case.
+--   2   = long-surah paging; the 2:282 overflow case.
+--   9   = the no-basmala case (At-Tawbah).
+--   114 = last surah; end-of-pack boundary.
+local TEST_SURAHS = { 1, 2, 9, 114 }
+local TEST_SURAH_NAMES = { [1] = "Al-Fatihah", [2] = "Al-Baqara", [9] = "At-Tawbah", [114] = "An-Nas" }
+
 -- Reference of the verse shown. Latin, deliberately: orients the tester,
 -- who reads it before the Arabic renders.
 local AYAH_REF = "2:255"
@@ -88,6 +113,12 @@ function Quran:onDispatcherRegisterActions()
         title = _("Qur'an — pack self-test"),
         general = true,
     })
+    Dispatcher:registerAction("quran_open_reader", {
+        category = "none",
+        event = "QuranOpenReader",
+        title = _("Qur'an — read (last position)"),
+        general = true,
+    })
 end
 
 function Quran:init()
@@ -106,6 +137,21 @@ function Quran:addToMainMenu(menu_items)
         sorting_hint = "more_tools",
         callback = function() self:showPackSelfTest() end,
     }
+
+    -- Milestone 2: the reader. Five items -- "last position" plus the four
+    -- TEST_SURAHS -- per spec.md §5.1. Scaffolding, not a navigator.
+    menu_items.quran_read_last = {
+        text = _("Qur'an — read (last position)"),
+        sorting_hint = "more_tools",
+        callback = function() self:openReader(nil) end,
+    }
+    for _, surah in ipairs(TEST_SURAHS) do
+        menu_items["quran_read_" .. surah] = {
+            text = _("Qur'an — read " .. TEST_SURAH_NAMES[surah] .. " (" .. surah .. ")"),
+            sorting_hint = "more_tools",
+            callback = function() self:openReader(surah) end,
+        }
+    end
 end
 
 -- MUST-VERIFY V3 note: the primary implementation described in the spec
@@ -313,6 +359,110 @@ end
 
 function Quran:onQuranShowPackSelfTest()
     self:showPackSelfTest()
+end
+
+-- Milestone 2: opens the reader. `surah == nil` means "last position"
+-- (§5.1). This function owns the resources reader.lua only borrows: it
+-- opens the settings store once, opens the db connection once, constructs
+-- the Reader, and shows it -- see §5.2. If anything along the way fails,
+-- it shows the same style of path-naming InfoMessage the M0/M1 entry
+-- points already use, and never shows the reader.
+function Quran:openReader(surah)
+    if not ok_reader or not Reader then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: reader.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+    if not ok_settings or not Settings then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: settings.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+    if not DB then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: db.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local dir, path_err = self:packPath()
+    if not dir then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: reader error\n\n" .. tostring(path_err),
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    -- D3: if settings persistence itself is unavailable, `Settings.open`
+    -- still returns a usable, defaults-only store -- not fatal, just
+    -- disclosed once here rather than shown as an error state.
+    local store, settings_err = Settings.open()
+    if settings_err then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: settings persistence unavailable\n\n" .. tostring(settings_err) ..
+                "\n\nDefaults are used; position will not be remembered this session.",
+            show_icon = false,
+            dismissable = true,
+        })
+    end
+
+    local target_surah = surah
+    if not target_surah then
+        target_surah = Settings.getLastSurah(store) or 1
+    end
+
+    local db_path = dir .. "/data/quran.db"
+    local conn, open_err = DB.open(db_path)
+    if not conn then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: pack error\n\n" .. tostring(open_err) .. "\n\nPath: " .. db_path,
+            show_icon = false,
+            dismissable = true,
+        })
+        Settings.close(store)
+        return
+    end
+
+    local ayah, line = Settings.getPosition(store, target_surah)
+    Settings.setLastSurah(store, target_surah)
+
+    local reader = Reader:new{
+        conn = conn,
+        store = store,
+        surah = target_surah,
+        ayah = ayah,
+        line = line,
+        on_close = function()
+            DB.close(conn)
+            Settings.close(store)
+        end,
+    }
+
+    if not reader.init_ok then
+        -- reader.lua already showed a specific InfoMessage explaining why
+        -- (edge cases 16-19). Reader:onCloseWidget() will never run for a
+        -- reader that was never shown, so this function must release the
+        -- resources it opened itself.
+        DB.close(conn)
+        Settings.close(store)
+        return
+    end
+
+    UIManager:show(reader)
+end
+
+function Quran:onQuranOpenReader()
+    self:openReader(nil)
 end
 
 return Quran

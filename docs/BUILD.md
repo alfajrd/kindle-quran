@@ -102,6 +102,18 @@ Runs its own repo-structure/provenance-consistency checks (C1–C11), then
 shells out to `tools/check_m0.py` and `tools/verify_pack.py` and folds their
 results in. Exit 0 only if all three are clean.
 
+**Milestone 2 (the reader) adds `tools/check_m2.py`, which is now the whole
+gate**: `python tools/check_m2.py` runs its own R1–R12 static checks over
+`quran.koplugin/reader.lua` and `quran.koplugin/settings.lua` (file
+existence, Lua parseability, the two fenced blocks, the MUST-VERIFY
+registry cross-check against `docs/VERIFY-M2.md`, typography constants,
+`_meta.lua`'s version, the STEP-marker sync with `tools/paging_model.py`,
+the on-device checklist in `README.md`, and the `io.*`/`os.*` ban), then
+shells out to `tools/check_m1.py` (which itself nests `check_m0.py` and
+`verify_pack.py`) and folds its result in. Exit 0 only if both parts are
+clean. Nothing it does replaces the on-device checklist -- see `README.md`'s
+"Milestone 2 — on-device checklist" for what only a real device can prove.
+
 ## Independent verification against Tanzil (the only thing that proves provenance)
 
 Every digest in this repository proves the committed bytes have not drifted

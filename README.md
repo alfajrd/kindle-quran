@@ -46,6 +46,16 @@ independently verified against Tanzil, see `docs/BUILD.md`.
    and is a similar size to the one in this repo. Without it, the plugin
    opens but every ayah lookup fails loudly (see "Pack missing on device"
    below) — this is deliberate (D5: never fall back to the pin), not a bug.
+3c. **Milestone 2 adds two more Lua files inside the same folder:**
+   `quran.koplugin/reader.lua` and `quran.koplugin/settings.lua`. Copying
+   `quran.koplugin/` wholesale (step 3) already carries them — this is
+   just confirming: check that
+   `/mnt/us/koreader/plugins/quran.koplugin/reader.lua` and
+   `.../settings.lua` both exist after the copy. Without either one, the
+   plugin still loads (M0/M1's two items still work) but the five
+   "Qur'an — read ..." reader items report the failure instead of opening
+   (see edge case 16 in `.pipeline/spec.md`) rather than being silently
+   absent.
 4. Copy `extensions/quran/` to `/mnt/us/extensions/quran/`.
 4b. Copy `fonts/ScheherazadeNew-Regular.ttf` to `/mnt/us/koreader/fonts/`.
    Without it the plugin falls back to KOReader's default sans — legible,
@@ -105,6 +115,82 @@ desktop?**
 
 See `docs/BUILD.md` for how the pack itself was built and how to
 independently verify it against a hand-downloaded Tanzil file.
+
+## Milestone 2 — on-device checklist
+
+Milestone 2 turns the plugin into a reader: open a surah, page forward and
+back through it continuously, come back later to exactly where you
+stopped, with Arabic size and line height adjustable at runtime and a grey
+ruled line under every line of text. It ships **no navigator** — the five
+"Qur'an — read ..." menu items (last position, plus the four hard-coded
+test surahs 1/2/9/114) are scaffolding for Milestone 3, not a finished
+feature; see `.pipeline/spec.md` §5.1.
+
+**Touch zones**, full screen, no chrome: `W`/`H` are screen width/height.
+
+| Zone | Region | Action |
+|---|---|---|
+| MENU | `x` in `[0.25W, 0.75W)` and `y` in `[0, 0.10H)` | Open the settings dialog |
+| PREV | everything else with `x < 0.5W` | Previous page |
+| NEXT | everything else with `x >= 0.5W` | Next page |
+
+`NEXT` is on the **right** — LTR-style, even though the text is RTL — to
+match KOReader's own reader on this device. D5 below asks you to judge
+whether that still feels right in Arabic; it is one constant
+(`FORWARD_ON_RIGHT` in `reader.lua`) to flip if not.
+
+Ten minutes on a Paperwhite 11, in this order. Each item is pass/fail with
+no judgement call except D5's direction question, which is marked as such.
+
+D13 is the exception to "ten minutes": it needs a file edit over USB.
+It earns that because 2:282 is the only ayah long enough to force the
+multi-page overflow path, and paging to it by hand takes 60-100 taps —
+which is why the earlier steps never reach it. Seeding the saved position
+also exercises the position-read path with a value this build did not
+write itself.
+`docs/VERIFY-M2.md` has the full MUST-VERIFY registry (V20–V36) that most
+FAIL columns below point back to.
+
+| id | Do this | PASS | FAIL means |
+|---|---|---|---|
+| D1 | Open KOReader's main menu → More tools. | All seven `Qur'an —` items are present. | Plugin threw at load; read `/mnt/us/koreader/crash.log`. |
+| D2 | Tap "read An-Nas (114)". | The whole surah renders, Arabic shaped and joined, with an ayah marker (`۝` + Arabic-Indic digits) after each ayah. | If markers show as boxes/nothing: set `AYAH_MARKER_STYLE = "ornate"` in `reader.lua` and retest. Never a Latin numeral. |
+| D3 | Look at the rules on that page. | One rule per line of text, none under blank space, text sits **on** the rules and no rule cuts through the glyphs, and the spacing of the last rule equals the spacing of the first (register holds). | Rules through the text or drifting: adjust `RULE_Y_OFFSET_PX` only. Drift specifically means the line pitch is not what V22 claims; stop and re-read the source. |
+| D4 | Look at the rules against the text. | Grey, clearly lighter than the glyphs. | Black rules ⇒ the colour fallback chain fell through; V28 is wrong. |
+| D5 | Open "read Al-Baqara (2)". Tap right five times. | Five distinct pages, each turn feels instant (well under half a second), no text repeated or skipped at any seam. **Also judge:** does right-for-forward feel right in Arabic? If not, flip `FORWARD_ON_RIGHT`. | Repeated/skipped lines at a seam ⇒ V25 (`top_line_num` off-by-one). |
+| D6 | Tap left five times. | You land on exactly the five pages you just saw, in reverse order, ending on the page you started from. | The paging inverse is broken; compare against `tools/paging_model.py`. |
+| D7 | Tap the top centre. Raise Arabic size twice, close the dialog. | The dialog opens, the readout names the current surah/ayah, the page re-renders larger, and the rules are still in register at the new line height. | Dialog absent ⇒ V29. Rules out of register after a size change ⇒ the line pitch was cached and not recomputed. |
+| D8 | Note the ayah number at the top of the page. Close the reader. Exit KOReader completely and restart it. Open "read (last position)". | The identical page appears, same ayah at the top. | Position lost ⇒ V30/V31; check the settings file exists at `DataStorage:getSettingsDir()`. |
+| D9 | Open surah 114, page to its end, close. Open surah 2 — check position — close. Open 114 again. | Each surah returns to its own saved position, independently. | Positions are sharing a key. |
+| D10 | In surah 114, tap right on the last page. | Nothing moves; a brief "End of surah 114" toast. | Cross-surah paging leaked in, or the last page is unreachable. |
+| D11 | Open surah 2, look at ayah 1. Then open surah 9, look at ayah 1. | Surah 2 shows the basmala **exactly once**, as the opening of ayah 1. Surah 9 shows **no** basmala. Surah 1 (check it too) shows the basmala as its numbered ayah 1. | A second basmala anywhere means a heading was rendered — it must not be. |
+| D12 | Page forward eight times in a row and look at the screen. | A full refresh clears any ghosting at least once in those eight; no accumulated smearing. | The `turns_since_full` counter is not firing. |
+| D13 | **The 2:282 overflow case.** Eject, then on a computer open `<KindleDrive>/koreader/settings/quran.lua` and set the Al-Baqara entry to `["2"] = { ayah = 281, line = 0 }` (create `positions = {}` if absent). Re-insert, open "read Al-Baqara (2)", then page forward until the marker reads `۝٢٨٢`. | 2:282 is the longest ayah in the Qur'an and **must** span several pages. Every one of those pages is full except the last, no line is repeated or lost at any seam, the rules stay in register throughout, and paging back through it returns you to exactly where you started. | Text lost or repeated across the split ⇒ the multi-page overflow path is wrong (V25/V26). A single clipped page ⇒ overflow is not implemented at all. Settings file rejected ⇒ position validation is too strict (V32). |
+
+**Telling a paging bug from a rendering bug from a position-memory bug** —
+these look similar on screen, so:
+
+- **Paging bug**: the wrong *ayah/line* ends up at the top of a page (a
+  seam repeats or skips a line, D5/D6). Diagnose against
+  `tools/paging_model.py`, which mirrors the same arithmetic on real ayah
+  lengths — if the model's forward/back walk over the same surah also
+  disagrees, it is the arithmetic; if the model agrees but the device
+  doesn't, it is `TextBoxWidget` metrics (V22–V25).
+- **Rendering bug**: the *right* ayah/line is at the top, but something
+  about how it is drawn is wrong (rules drift or wrong colour, D3/D4;
+  clipped/overflowing text within one ayah's own slice). These never
+  change *which* ayah is showing, only how it looks.
+- **Position-memory bug**: the reader opens to the wrong page after a
+  close/reopen (D8/D9), even though paging *within* a session was correct.
+  Diagnose by checking whether the settings file
+  (`DataStorage:getSettingsDir() .. "/quran.lua"`) exists and its
+  `positions` table has the surah's key — if the file is missing or empty,
+  it's V30/V31 (persistence); if the file has a value but the wrong one,
+  it's a `Settings.setPosition`/`getPosition` bug, not a paging bug.
+
+Record with the result: which of D3's/D5's tunable constants (if any) were
+changed and to what value, and which MUST-VERIFY items (V20–V36) were
+confirmed or refuted by this pass.
 
 ## What you should see
 

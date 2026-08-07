@@ -116,6 +116,59 @@ function DB.counts(conn)
     return (ok1 and tonumber(surah_count)) or 0, (ok2 and tonumber(ayah_count)) or 0
 end
 
+-- Returns (count, nil) or (nil, err_string).
+function DB.getSurahAyahCount(conn, surah)
+    if not conn then
+        return nil, "DB.getSurahAyahCount: no connection"
+    end
+    local ok, count = pcall(function()
+        return conn:rowexec("SELECT ayah_count FROM surah WHERE id = ?;", surah)
+    end)
+    if not ok then
+        return nil, "DB.getSurahAyahCount(" .. tostring(surah) .. "): " .. tostring(count)
+    end
+    if count == nil then
+        return nil, "DB.getSurahAyahCount: no row for surah " .. tostring(surah)
+    end
+    return count, nil
+end
+
+-- `which` is one of "name_ar" | "name_en" | "name_tr"; anything else is an
+-- error return, never interpolated into SQL. Returns (value, nil) or (nil, err).
+function DB.getSurahName(conn, surah, which)
+    if not conn then
+        return nil, "DB.getSurahName: no connection"
+    end
+    local column
+    if which == "name_ar" then
+        column = "name_ar"
+    elseif which == "name_en" then
+        column = "name_en"
+    elseif which == "name_tr" then
+        column = "name_tr"
+    else
+        return nil, "DB.getSurahName: invalid `which`: " .. tostring(which)
+    end
+    local sql
+    if column == "name_ar" then
+        sql = "SELECT name_ar FROM surah WHERE id = ?;"
+    elseif column == "name_en" then
+        sql = "SELECT name_en FROM surah WHERE id = ?;"
+    else
+        sql = "SELECT name_tr FROM surah WHERE id = ?;"
+    end
+    local ok, value = pcall(function()
+        return conn:rowexec(sql, surah)
+    end)
+    if not ok then
+        return nil, "DB.getSurahName(" .. tostring(surah) .. ", " .. tostring(which) .. "): " .. tostring(value)
+    end
+    if value == nil then
+        return nil, "DB.getSurahName: no row for surah " .. tostring(surah)
+    end
+    return value, nil
+end
+
 function DB.close(conn)
     if conn then
         pcall(function() conn:close() end)

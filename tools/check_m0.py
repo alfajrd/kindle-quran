@@ -88,6 +88,8 @@ EXPECTED_KOPLUGIN_FILES = {
     "_meta.lua",
     "main.lua",
     "db.lua",
+    "reader.lua",
+    "settings.lua",
     os.path.join("data", "2_255.txt"),
     os.path.join("data", "2_255.sha256"),
     os.path.join("data", "SOURCE.md"),
