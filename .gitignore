@@ -1,0 +1,22 @@
+# Personal translation packs.
+#
+# A translation you own may be side-loaded onto your own device — that is
+# format-shifting a book you bought. Committing it here is redistribution:
+# this repo is public, and git history is permanent, so a file added and
+# later deleted is still published.
+#
+# Nothing matching these patterns may be committed. Packs cleared for
+# redistribution must be added explicitly with `git add -f` AND recorded in
+# THIRD-PARTY.md with their licence.
+packs/personal/
+*.personal.db
+*.personal.json
+translations/*.db
+!translations/README.md
+
+# Build artefacts
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
