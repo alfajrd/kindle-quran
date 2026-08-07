@@ -324,3 +324,7 @@ after it is wasted.
 Search (verify FTS5 in KOReader's SQLite build) · Bible pack on the same engine
 · Indonesian translation, licensing permitting · tafsir · transliteration ·
 bookmarks export · word-by-word.
+
+Items with enough shape to need designing before they are picked up live in
+`docs/BACKLOG.md` — currently **B1**, the startup choice between Arabic-only
+and one-ayah-per-page-with-translation.
