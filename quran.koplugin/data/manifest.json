@@ -1,0 +1,15 @@
+{
+  "attribution": "Tanzil Qur'an Text (Uthmani), https://tanzil.net",
+  "ayah_count": 6236,
+  "build_date": "2026-08-07",
+  "corpus_sha256": "5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621",
+  "db_sha256": "f708afea3f92bbc71d1797d7fec67f17f492cecb3545d4023cdedc2f3666ebd2",
+  "direction": "rtl",
+  "language": "ar",
+  "name": "Qur'an — Uthmani",
+  "pack_id": "quran-uthmani",
+  "schema_version": 1,
+  "source_url": "https://tanzil.net",
+  "surah_count": 114,
+  "text_edition": "Tanzil Uthmani"
+}

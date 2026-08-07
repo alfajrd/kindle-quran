@@ -1,14 +1,22 @@
-# `quran.koplugin` — Milestone 0: does Arabic render on the device
+# `quran.koplugin` — Milestone 1: the pack is the scripture, provably
 
-This is a **go/no-go gate**, not a real Qur'an app. It renders one hard-coded,
-byte-exact Tanzil Uthmani ayah (2:255, Ayat al-Kursi) full-screen inside
-KOReader on a jailbroken Kindle Paperwhite 11, so a human can decide in five
-minutes whether Arabic shaping, joining and harakat work on this device —
-and therefore whether the whole KOReader architecture (§2 of the wider
-project spec) is viable at all.
+Milestone 0 was a go/no-go gate: one hard-coded, byte-exact Tanzil Uthmani
+ayah (2:255, Ayat al-Kursi), full-screen, to prove Arabic shaping, joining
+and harakat work on this device at all. That checklist is kept below because
+it is still the reproducible on-device rendering check.
+
+**Milestone 1 adds the whole Qur'an, as a checksummed SQLite pack**
+(`quran.koplugin/data/quran.db`, all 114 surahs / 6236 ayat), built and
+verified by a reproducible desktop pipeline (`docs/BUILD.md`), and changes
+the plugin so the ayah it displays is **read out of that pack** at runtime —
+the M0 literal (`PIN_2_255`) is kept only as a tripwire the pack's own text
+is compared against, never displayed itself. If the pack is missing,
+unreadable, or disagrees with the pin, the plugin shows a loud, specific
+error and displays nothing else; it never silently falls back to the pin.
 
 If you are looking for the wider project plan, see
-`d:\Nekoweb\dev\quran-spec-v1.md`. This README covers Milestone 0 only.
+`docs/SPEC-v1.md`. For how the pack is built, rebuilt and
+independently verified against Tanzil, see `docs/BUILD.md`.
 
 ## What this is not
 
@@ -31,6 +39,13 @@ If you are looking for the wider project plan, see
    project.
 2. USB-mount the Kindle.
 3. Copy `quran.koplugin/` to `/mnt/us/koreader/plugins/quran.koplugin/`.
+3b. **Confirm `quran.db` actually copied.** `quran.koplugin/data/quran.db`
+   is a ~1.5 MB binary file inside the folder you just copied — some sync
+   tools and some previous manual copies skip large/binary files silently.
+   Check that `/mnt/us/koreader/plugins/quran.koplugin/data/quran.db` exists
+   and is a similar size to the one in this repo. Without it, the plugin
+   opens but every ayah lookup fails loudly (see "Pack missing on device"
+   below) — this is deliberate (D5: never fall back to the pin), not a bug.
 4. Copy `extensions/quran/` to `/mnt/us/extensions/quran/`.
 4b. Copy `fonts/ScheherazadeNew-Regular.ttf` to `/mnt/us/koreader/fonts/`.
    Without it the plugin falls back to KOReader's default sans — legible,
@@ -39,12 +54,55 @@ If you are looking for the wider project plan, see
 6. Open KUAL → **"Qur'an"**. This starts KOReader (it does not open the
    plugin directly — see "KUAL entry" below).
 7. In KOReader's File Manager: top menu → **Tools** (some KOReader versions
-   call it **"More tools"** — check both) → **"Qur'an — test ayah (2:255)"**.
-8. If the menu item is not there, check KOReader's crash log at
+   call it **"More tools"** — check both) → **"Qur'an — pack self-test"**
+   first (confirms the pack opened, its counts and checksum, and whether
+   2:255 matches the pin), then **"Qur'an — test ayah (2:255)"** (renders the
+   ayah read from the pack).
+8. If neither menu item is there, check KOReader's crash log at
    `/mnt/us/koreader/crash.log`. That is where a Lua error thrown while
    loading the plugin surfaces — KOReader silently skips a plugin that
    throws at load time, so "the menu item isn't there" is the most likely
    first-run symptom, and the crash log is the only way to debug it.
+
+### Pack missing on device
+
+If `quran.db` was not copied (or was copied to the wrong path), **"Qur'an —
+test ayah (2:255)"** and **"Qur'an — pack self-test"** both show a loud,
+specific `Qur'an: pack error` message naming the exact path the plugin tried
+to open. There is no silent fallback to the old hard-coded pin — a pack
+error must look like an error, not like Milestone 0 quietly reappearing.
+
+### Milestone 1 device checklist
+
+Beyond the M0 rendering checklist below (still the correct way to judge
+Arabic shaping), Milestone 1 adds one more question: **does the displayed
+text genuinely come from `quran.db`, and does it match what was verified on
+desktop?**
+
+1. Open **"Qur'an — pack self-test"**. Record: `pack_id`, `build_date`,
+   `surah_count` / `ayah_count` (should read `114` / `6236`, counted from the
+   tables, not trusted from `meta`), `checksum` (should read
+   `5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621`), and
+   the `2:255 pin` line (should read `MATCH`).
+2. Open **"Qur'an — test ayah (2:255)"**. The Arabic shown must render
+   identically to the Milestone 0 photo (same shaping, same joining, same
+   harakat, no tofu) — it is now sourced from the pack, not from the
+   `PIN_2_255` literal, so this also re-proves M0's rendering result still
+   holds end-to-end through the database.
+3. On KOReader's Lua console or via `ls`, confirm **no `quran.db-wal` or
+   `quran.db-journal` file** appears next to `quran.db` after use — the pack
+   is opened read-only and must never write to `/mnt/us`.
+4. Record `SELECT sqlite_version();` and whether
+   `sqlite_compileoption_used('ENABLE_FTS5')` if you can reach KOReader's Lua
+   console (see `.pipeline/spec.md`'s MUST-VERIFY V15/V16 — unresolved on
+   the desktop machine that built this pack; only the device can answer).
+5. Time from menu tap to rendered ayah, roughly, by counting — should feel
+   under a second.
+6. Free space on `/mnt/us` before and after copying (`quran.db` adds
+   roughly 1.5 MB).
+
+See `docs/BUILD.md` for how the pack itself was built and how to
+independently verify it against a hand-downloaded Tanzil file.
 
 ## What you should see
 
@@ -171,3 +229,14 @@ No SQLite, no build pipeline, no second verse, no navigation, no
 translation text, no bookmarks, no settings UI, and no font files. See
 `.pipeline/spec.md`'s "Out of scope" section for the full list. This is
 kept small on purpose — the gate is only useful if it stays cheap.
+
+## What is deliberately absent from Milestone 1
+
+No English translation (the `translation` table is created empty, on
+purpose — see `data/SOURCE.md`), no navigation UI, no surah list, no juz
+picker, no reference parser (typing `2:255` to jump), no `order_rev`
+(revelation-order) data, no display modes or Bismillah/sajdah rendering, no
+settings UI, no search/FTS5/inverted index. The surah names, juz and sajdah
+*data* are in the pack because the schema requires them; nothing in the UI
+touches them yet. Full list: `.pipeline/spec.md`'s M1 "Out of scope"
+section.

@@ -40,6 +40,23 @@ that a failing presence/absence assertion against genuinely verbatim Tanzil
 text means the assertion is wrong, never the text. No character was ever
 removed from the Arabic to satisfy a check.
 
+## Correction (Milestone 1) — how this file's provenance chain actually ran
+
+The paragraph above ("How it entered this repo") implies 2:255 was fetched
+directly from Tanzil for this file. On closer accounting during Milestone 1,
+that is not quite what happened: the actual retrieval route was **Tanzil
+Uthmani, obtained via alquran.cloud's `quran-uthmani` edition**, which
+redistributes the Tanzil text unmodified. What *is* true, and is the part
+that matters for trusting these bytes, is that this exact verse — extracted
+from that same bulk fetch and hashed independently during Milestone 1 —
+produces the identical digest already pinned here
+(`920a0a6c784cd0ec7dae3a75c1539fae4cf7b31051880f5085e4cd5239de06f8`), and
+was reviewed codepoint-by-codepoint by a human at Milestone 0 before that
+cross-check existed. The bytes are confirmed identical to the bulk edition
+now vendored at `data/quran-uthmani.txt`; see `data/SOURCE.md` for that
+edition's full provenance chain and for the manual Tanzil-download procedure
+that is the *only* thing that actually proves Tanzil origin.
+
 ## Limitation of the SHA-256 guard
 
 `2_255.sha256` is generated from whatever bytes happen to be committed in

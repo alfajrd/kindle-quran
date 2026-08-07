@@ -87,9 +87,13 @@ REQUIRED_FILES = [
 EXPECTED_KOPLUGIN_FILES = {
     "_meta.lua",
     "main.lua",
+    "db.lua",
     os.path.join("data", "2_255.txt"),
     os.path.join("data", "2_255.sha256"),
     os.path.join("data", "SOURCE.md"),
+    os.path.join("data", "quran.db"),
+    os.path.join("data", "quran.db.sha256"),
+    os.path.join("data", "manifest.json"),
 }
 
 FORBIDDEN_EXTENSIONS = {".ttf", ".otf", ".db"}
@@ -126,25 +130,33 @@ def check_s2(root):
     )
 
 
+ALLOWED_DB_PATH = os.path.join("quran.koplugin", "data", "quran.db")
+
+
 def check_s3(root):
     # Fonts live in fonts/ and nowhere else. M0 originally forbade every font
     # file; the font question has since been answered deliberately (Scheherazade
     # New, OFL 1.1, picked by eye on the device), so a vendored face under
     # fonts/ is now expected. Elsewhere it still means a binary landed where it
-    # should not, and .db stays forbidden outright -- SQLite belongs to
-    # Milestone 1, not here.
+    # should not. SQLite belonged to Milestone 1, and Milestone 1 has arrived --
+    # one pack, one place: quran.koplugin/data/quran.db is now allowed, and it
+    # is the only .db path this check will not flag.
     offenders = []
     for path in iter_all_files(root):
         rel = os.path.relpath(path, root)
         _base, ext = os.path.splitext(path)
         if ext.lower() not in FORBIDDEN_EXTENSIONS:
             continue
-        if ext.lower() == ".db" or os.path.dirname(rel).replace(chr(92), "/") != "fonts":
+        if ext.lower() == ".db":
+            if rel != ALLOWED_DB_PATH:
+                offenders.append(rel)
+            continue
+        if os.path.dirname(rel).replace(chr(92), "/") != "fonts":
             offenders.append(rel)
     check_boolean(
         "S3",
         not offenders,
-        "fonts only under fonts/; no .db anywhere",
+        "fonts only under fonts/; the one allowed pack is quran.koplugin/data/quran.db",
         "misplaced binary/forbidden file(s): " + ", ".join(offenders),
     )
 

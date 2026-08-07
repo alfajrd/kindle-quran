@@ -12,6 +12,14 @@
 # rewrite a single byte of scripture, whatever the user's core.autocrlf is.
 quran.koplugin/data/2_255.txt binary
 
+# Milestone 1: the vendored bulk corpus and the built pack are pinned the
+# same way, for the same reason. surah_meta.json is metadata, not
+# scripture, but -text keeps git from ever touching its bytes either, since
+# its digest is checked the same way.
+data/quran-uthmani.txt binary
+quran.koplugin/data/quran.db binary
+data/surah_meta.json -text
+
 # Vendored from SIL — keep byte-exact, including their CRLF line endings.
 fonts/OFL.txt -text
 fonts/FONTLOG.txt -text
