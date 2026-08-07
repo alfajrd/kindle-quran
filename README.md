@@ -50,7 +50,12 @@ If you are looking for the wider project plan, see
 
 A full-screen view showing, in order: a short Latin title line
 ("Qur'an 2:255"), a blank line, then the Arabic text of Ayat al-Kursi,
-right-to-left, wrapped over multiple lines. If the text is taller than the
+right-to-left, wrapped over multiple lines, set in Scheherazade New at 34px.
+
+**Milestone 0 has already passed on a Paperwhite 11** — direction, joining,
+the lam-alef ligature, stacked harakat and the Uthmani marks all rendered
+correctly with zero tofu. The checklist below is kept so the result can be
+reproduced on other devices, and so a regression is easy to spot. If the text is taller than the
 screen, it scrolls — scroll to the end before judging line-spacing (check 7
 below).
 
@@ -117,9 +122,12 @@ the Kindle.
   **proprietary** and may not be redistributed, so it cannot be bundled
   even though you may install it on your own device.
 - **FAIL MODE C — typography, not architecture.** Checks 1–6 pass, 7 fails
-  (marks colliding). Architecture is **fine**. It confirms Arabic needs
-  roughly 1.9 line height at 34px, and is a later-milestone tuning task.
-  Note it and move on.
+  (marks colliding). Architecture is **fine**; this is a tuning task.
+
+  **Settled.** On a Paperwhite 11 with Scheherazade New, 34px was chosen by
+  eye after comparing 26/30/34/38/44 — at that size the harakat clear the
+  line above. That is the current `ARABIC_FONT_SIZE`. The comparison submenu
+  used to reach it has been removed.
 
 ### Record with the verdict
 

@@ -36,6 +36,11 @@ local ARABIC_FONT = "ScheherazadeNew-Regular.ttf"
 -- Starting point size (see d:\Nekoweb\dev\quran-spec-v1.md §9). Verified
 -- against frontend/ui/font.lua: this is an "orig_size" scaled internally by
 -- Screen:scaleBySize(), not a raw pixel count (MUST-VERIFY V5).
+-- 34px, chosen by eye on a Paperwhite 11 against Scheherazade New after
+-- comparing 26/30/34/38/44. At this size the harakat clear the line above,
+-- which settles the line-height question the M0 checklist raised as
+-- Fail Mode C. The comparison submenu that produced this number has been
+-- removed; it was scaffolding.
 local ARABIC_FONT_SIZE = 34
 
 -- BEGIN VERBATIM TANZIL UTHMANI 2:255 -- DO NOT EDIT, DO NOT NORMALISE, DO NOT REFLOW
@@ -63,28 +68,11 @@ function Quran:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
--- Sizes offered for on-device comparison. Arabic needs more vertical room than
--- Latin at the same nominal size, because harakat stack above and below the
--- baseline -- so the right value can only be judged by eye on the target
--- screen. These are entries, not settings: whichever wins becomes the new
--- ARABIC_FONT_SIZE default, and this submenu goes away in a later milestone.
-local SIZE_CHOICES = { 26, 30, 34, 38, 44 }
-
 function Quran:addToMainMenu(menu_items)
-    local sub_items = {}
-    for _i, size in ipairs(SIZE_CHOICES) do
-        table.insert(sub_items, {
-            text = string.format("%dpx%s", size,
-                size == ARABIC_FONT_SIZE and "  (current default)" or ""),
-            keep_menu_open = false,
-            callback = function() self:showTestAyah(size) end,
-        })
-    end
-
     menu_items.quran_test_ayah = {
         text = _("Qur'an — test ayah (2:255)"),
         sorting_hint = "more_tools",
-        sub_item_table = sub_items,
+        callback = function() self:showTestAyah() end,
     }
 end
 
@@ -111,13 +99,10 @@ end
 -- "left" to "right" for a paragraph it detects as RTL (see the
 -- `line.para_is_rtl` handling), so `alignment = "left"` is kept and lets
 -- that auto-flip do the work.
--- `size` is optional; omitted, it uses the ARABIC_FONT_SIZE default. It exists
--- so the same ayah can be compared at several sizes in one sitting without
--- editing this file and re-copying it to the device between each look.
-function Quran:showTestAyah(size)
+function Quran:showTestAyah()
     UIManager:show(InfoMessage:new{
         text = "Qur'an " .. AYAH_REF .. "\n\n" .. AYAH_TEXT,
-        face = Font:getFace(ARABIC_FONT or "cfont", size or ARABIC_FONT_SIZE),
+        face = Font:getFace(ARABIC_FONT or "cfont", ARABIC_FONT_SIZE),
         show_icon = false,
         width = Screen:getWidth() - Screen:scaleBySize(30),
         height = Screen:getHeight() - Screen:scaleBySize(30),
