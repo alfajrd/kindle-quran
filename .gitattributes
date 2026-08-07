@@ -1,0 +1,17 @@
+# Default: text files normalise to LF. The device runs shell scripts and Lua;
+# CRLF would break quran.sh outright.
+* text eol=lf
+
+# Binaries must never be touched. `text eol=lf` above would apply line-ending
+# normalisation to a TTF and silently corrupt it.
+*.ttf binary
+*.otf binary
+*.png binary
+
+# The Qur'anic text is byte-pinned by SHA-256. Mark it binary so git cannot
+# rewrite a single byte of scripture, whatever the user's core.autocrlf is.
+quran.koplugin/data/2_255.txt binary
+
+# Vendored from SIL — keep byte-exact, including their CRLF line endings.
+fonts/OFL.txt -text
+fonts/FONTLOG.txt -text
