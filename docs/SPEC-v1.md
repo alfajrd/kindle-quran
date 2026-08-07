@@ -239,9 +239,40 @@ baseline, and tight lines collide. The two sizes are **independently
 adjustable** because a reader wanting large Arabic rarely wants equally large
 English.
 
-**Font:** KFGQPC Uthmanic Script HAFS if its licence permits redistribution;
-otherwise Amiri (OFL). Decide by diacritic coverage, checked on-device against
-known-difficult verses.
+**Font: settled.** Scheherazade New (SIL, OFL 1.1), vendored in `fonts/` and
+chosen by eye on a Paperwhite 11. Verified to cover every codepoint in the
+corpus, with GSUB and GPOS present. KFGQPC Uthmanic Script HAFS is the most
+authentic face but is **proprietary and may not be redistributed**, so it is
+ruled out for a KindleForge release — see `THIRD-PARTY.md`.
+
+**Arabic size: settled at 34 px**, chosen on device against Scheherazade New
+after comparing 26/30/34/38/44. Harakat clear the line above at that size.
+This is a Paperwhite 11 number; a 167 ppi device will want its own.
+
+### Ruled lines (Milestone 2)
+
+Long RTL lines are hard for the eye to track back along — ruled mushafs and
+lined paper solve the same problem. The reader should draw a horizontal rule
+between lines, with the extra leading above.
+
+Verified against KOReader source, so M2 need not repeat the research:
+
+- `TextBoxWidget` accepts `line_height` (em, **default 0.3**). That is the
+  leading control.
+- **`InfoMessage` does not forward `line_height`.** It passes only text, face,
+  width, height, alignment, lang, and the two para-direction flags. So the
+  Milestone 0 display widget cannot do leading *or* rules, and M2 must build
+  on `TextBoxWidget` directly rather than going through `InfoMessage`.
+- `TextBoxWidget` exposes `line_height_px`, `lines_per_page` and
+  `vertical_string_list` after init. Draw rules at `line_height_px` intervals
+  so they land on the text's own baselines; spacing them by guesswork drifts
+  out of register as the block grows.
+- Those fields are commented **"for internal use"** upstream. Treat as
+  MUST-VERIFY against the pinned KOReader version, and re-check on upgrade.
+
+On e-ink, rules want to be light — a thin grey, not full black — or they
+compete with the text they are meant to support. That is a device judgement,
+not a desktop one.
 
 ---
 
@@ -265,7 +296,7 @@ loading it whole — don't, because the Bible pack later will not be.
 |---|---|---|
 | **0** | Hello-world `.koplugin` on the PW11 rendering one hard-coded Uthmani ayah with correct shaping, joining and harakat | **The premise.** |
 | 1 | Pipeline → validated `quran.db` passing every §7 assertion | Data integrity |
-| 2 | Reader: continuous scroll, position memory, typography | The core loop |
+| 2 | Reader: continuous scroll, position memory, typography, **ruled lines** | The core loop |
 | 3 | Navigator (surah + juz) and reference parser | Why it beats an EPUB |
 | 4 | Display modes, Bismillah/sajdah rules, bookmarks, About | Feature-complete |
 | 5 | KindleForge packaging, README, screenshots | Ship |
