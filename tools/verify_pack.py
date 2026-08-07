@@ -32,7 +32,22 @@ import re
 import sqlite3
 import sys
 
-EXPECTED_CORPUS_SHA256 = "5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621"
+# EXPECTED_CORPUS_SHA256 is the digest of `data/quran-uthmani.txt` exactly
+# as vendored -- Tanzil's own download, byte-exact, including its trailing
+# blank-line-plus-'#'-comment copyright block. This file is never edited.
+EXPECTED_CORPUS_SHA256 = "18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1"
+# EXPECTED_CANONICAL_SHA256 is the digest of the canonical
+# "surah|ayah|text\n" serialisation, ordered, of the corpus AFTER the
+# declared errata in `data/errata.tsv` have been applied -- what the pack's
+# `ayah` table content and `meta.checksum` are supposed to hash to.
+EXPECTED_CANONICAL_SHA256 = "9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa"
+# The two ayat the sole currently-declared erratum (E1, docs/ERRATA.md)
+# touches, and the hash each must have AFTER correction. Re-typed here
+# independently of build_pack.py and of data/errata.tsv, per D4.
+ERRATA_AFTER = {
+    (95, 1): "1e01f20fba7652508755f9808d04405f68116fd284c642b3abe6ebcea1e1eda6",
+    (97, 1): "3e268f5464393be54903bc7b9c9f6fb220a6f3a6fbfd7c3093c1e043f487c7d1",
+}
 EXPECTED_SURAH_COUNT = 114
 EXPECTED_AYAH_COUNT = 6236
 EXPECTED_SAJDAH_COUNT = 15
@@ -50,6 +65,7 @@ REQUIRED_META_KEYS = [
     "pack_id", "schema_version", "name", "language", "direction",
     "text_edition", "source_url", "attribution", "licence", "terms",
     "build_date", "checksum", "surah_count", "ayah_count", "builder",
+    "errata_count", "errata_ids",
 ]
 
 # The spec's P26 whitelist is "printable ASCII plus -, ', space". Two of the
@@ -96,6 +112,46 @@ def connect_ro(db_path):
     return sqlite3.connect(uri, uri=True)
 
 
+def read_vendored_rows(raw):
+    """Independent, re-typed parse of data/quran-uthmani.txt's bytes,
+    tolerating Tanzil's standard trailer (blank lines, then lines starting
+    with '#') after exactly EXPECTED_AYAH_COUNT "surah|ayah|text" lines.
+    Returns (rows, None) on success, sorted by (surah, ayah), or
+    (None, reason) on any structural problem. Deliberately not shared with
+    build_pack.py's read_corpus (see D4)."""
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        return None, "not valid UTF-8: %s" % exc
+    if "\r" in text:
+        return None, "contains a \\r byte"
+    if not text.endswith("\n"):
+        return None, "does not end with a trailing newline"
+    lines = text[:-1].split("\n")
+    if len(lines) < EXPECTED_AYAH_COUNT:
+        return None, "has %d line(s), fewer than %d" % (len(lines), EXPECTED_AYAH_COUNT)
+    ayah_lines = lines[:EXPECTED_AYAH_COUNT]
+    trailer_lines = lines[EXPECTED_AYAH_COUNT:]
+    for line in trailer_lines:
+        if line != "" and not line.startswith("#"):
+            return None, "trailer line is neither blank nor a '#' comment: %r" % (line[:60],)
+    if any(line == "" for line in ayah_lines):
+        return None, "a blank line appears among the first %d lines" % EXPECTED_AYAH_COUNT
+    rows = []
+    for line in ayah_lines:
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            return None, "line %r is not surah|ayah|text" % (line,)
+        s_str, a_str, t = parts
+        try:
+            s, a = int(s_str), int(a_str)
+        except ValueError:
+            return None, "line %r has non-integer surah/ayah" % (line,)
+        rows.append((s, a, t))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    return rows, None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     default_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -131,7 +187,7 @@ def main():
         for check_id in [
             "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11",
             "P12", "P13", "P14", "P15", "P16", "P17", "P18", "P19", "P20",
-            "P21", "P22", "P23", "P24", "P25", "P26", "P27",
+            "P21", "P22", "P23", "P24", "P25", "P26", "P27", "P28", "P29", "P30",
         ]:
             record(check_id, False, "db could not be opened (see P1)")
         return _finish()
@@ -173,7 +229,7 @@ def main():
             for check_id in [
                 "P6", "P7", "P8", "P9", "P10", "P11", "P12", "P13", "P14",
                 "P15", "P16", "P17", "P18", "P19", "P20", "P21", "P22",
-                "P23", "P24", "P25", "P26", "P27",
+                "P23", "P24", "P25", "P26", "P27", "P28", "P29", "P30",
             ]:
                 record(check_id, False, "required table missing (see P5)")
             return _finish(conn)
@@ -291,16 +347,18 @@ def main():
                        "no \\n, \\r, \\t, leading/trailing space or double space in any ayah text",
                        "offending ayah(s): " + ", ".join(bad_whitespace))
 
-        # P16: canonical serialisation re-derived from db rows hashes to the pin
+        # P16: canonical serialisation re-derived from db rows hashes to the
+        # POST-ERRATA pin (the pack's ayah text has the declared corrections
+        # applied; the vendored file on disk does not -- see P28/P29 below).
         rederived = canonical_bytes([(s, a, t) for s, a, t, _sj, _j in ayah_rows])
         rederived_digest = hashlib.sha256(rederived).hexdigest()
-        check_boolean("P16", rederived_digest == EXPECTED_CORPUS_SHA256,
-                       "canonical serialisation re-derived from db rows hashes to %s" % EXPECTED_CORPUS_SHA256,
-                       "re-derived digest = %s, expected %s" % (rederived_digest, EXPECTED_CORPUS_SHA256))
+        check_boolean("P16", rederived_digest == EXPECTED_CANONICAL_SHA256,
+                       "canonical serialisation re-derived from db rows hashes to %s" % EXPECTED_CANONICAL_SHA256,
+                       "re-derived digest = %s, expected %s" % (rederived_digest, EXPECTED_CANONICAL_SHA256))
 
         # P17: required meta keys present/non-empty; checksum/surah_count/ayah_count
         missing_meta = [k for k in REQUIRED_META_KEYS if not meta_rows.get(k)]
-        checksum_ok = meta_rows.get("checksum") == EXPECTED_CORPUS_SHA256
+        checksum_ok = meta_rows.get("checksum") == EXPECTED_CANONICAL_SHA256
         surah_count_ok = meta_rows.get("surah_count") == str(EXPECTED_SURAH_COUNT)
         ayah_count_ok = meta_rows.get("ayah_count") == str(EXPECTED_AYAH_COUNT)
         check_boolean("P17", not missing_meta and checksum_ok and surah_count_ok and ayah_count_ok,
@@ -469,6 +527,72 @@ def main():
         check_boolean("P27", not p27_reasons,
                        "surah rows match data/surah_meta.json field-for-field after the D-mapping; sha256 matches",
                        "; ".join(p27_reasons))
+
+        # P28: the vendored file itself is byte-exact (never edited) and
+        # parses as EXPECTED_AYAH_COUNT ayah lines plus a blank/'#' trailer.
+        vendored_path = os.path.join(root, "data", "quran-uthmani.txt")
+        vendored_rows = None
+        if not os.path.isfile(vendored_path):
+            record("P28", False, "data/quran-uthmani.txt does not exist")
+        else:
+            vendored_raw = open(vendored_path, "rb").read()
+            vendored_digest = hashlib.sha256(vendored_raw).hexdigest()
+            digest_ok = vendored_digest == EXPECTED_CORPUS_SHA256
+            parsed_rows, parse_err = read_vendored_rows(vendored_raw)
+            if digest_ok and parsed_rows is not None:
+                vendored_rows = parsed_rows
+            check_boolean(
+                "P28", digest_ok and parsed_rows is not None,
+                "data/quran-uthmani.txt sha256 == %s and parses as %d ayah lines" % (
+                    EXPECTED_CORPUS_SHA256, EXPECTED_AYAH_COUNT),
+                "digest_ok=%r (sha256=%s) parse_err=%r" % (digest_ok, vendored_digest, parse_err))
+
+        # P29: every ayah in the db, except the two the sole declared
+        # erratum touches, is byte-identical to data/quran-uthmani.txt; the
+        # two it does touch equal the erratum's declared after-hashes.
+        if vendored_rows is None:
+            record("P29", False, "could not parse data/quran-uthmani.txt (see P28)")
+        else:
+            vendored_by_key = {(s, a): t for s, a, t in vendored_rows}
+            db_by_key = {(s, a): t for s, a, t, _sj, _j in ayah_rows}
+            non_erratum_mismatches = []
+            erratum_mismatches = []
+            for key, db_text in db_by_key.items():
+                if key in ERRATA_AFTER:
+                    actual = hashlib.sha256((db_text or "").encode("utf-8")).hexdigest()
+                    expected = ERRATA_AFTER[key]
+                    if actual != expected:
+                        erratum_mismatches.append("%d:%d sha256=%s expected=%s" % (
+                            key[0], key[1], actual, expected))
+                    continue
+                if vendored_by_key.get(key) != db_text:
+                    non_erratum_mismatches.append("%d:%d" % key)
+            same_keyset = set(vendored_by_key) == set(db_by_key)
+            check_boolean(
+                "P29", same_keyset and not non_erratum_mismatches and not erratum_mismatches,
+                "every db ayah outside 95:1/97:1 is byte-identical to data/quran-uthmani.txt; "
+                "95:1 and 97:1 equal the declared post-erratum hashes",
+                "keyset mismatch=%r; non-erratum mismatch(es): %r; erratum hash mismatch(es): %r" % (
+                    not same_keyset, non_erratum_mismatches, erratum_mismatches))
+
+        # P30: meta.errata_count/errata_ids agree with data/errata.tsv
+        errata_path = os.path.join(root, "data", "errata.tsv")
+        if not os.path.isfile(errata_path):
+            record("P30", False, "data/errata.tsv does not exist")
+        else:
+            errata_text = open(errata_path, "r", encoding="utf-8").read()
+            errata_rows = []
+            for line in errata_text.split("\n"):
+                if line == "" or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) == 5:
+                    errata_rows.append(parts)
+            stated_count = meta_rows.get("errata_count")
+            check_boolean(
+                "P30", stated_count == str(len(errata_rows)),
+                "meta.errata_count matches the number of declared rows in data/errata.tsv",
+                "meta.errata_count=%r, data/errata.tsv declares %d row(s)" % (stated_count, len(errata_rows)))
 
     finally:
         conn.close()

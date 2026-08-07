@@ -32,7 +32,32 @@ import sqlite3
 import sys
 import tempfile
 
-EXPECTED_CORPUS_SHA256 = "5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621"
+# EXPECTED_CORPUS_SHA256 is the digest of `data/quran-uthmani.txt` exactly
+# as vendored -- Tanzil's own download, byte-exact, including its trailing
+# blank-line-plus-'#'-comment copyright block. This file is never edited.
+EXPECTED_CORPUS_SHA256 = "18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1"
+# EXPECTED_CANONICAL_SHA256 is the digest of the canonical
+# "surah|ayah|text\n" serialisation, ordered, of the corpus AFTER the
+# declared errata in `data/errata.tsv` have been applied. This is what ends
+# up in the pack (`ayah` table content, `meta.checksum`,
+# `manifest.json.corpus_sha256`) -- see docs/ERRATA.md.
+EXPECTED_CANONICAL_SHA256 = "9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa"
+# The single correction mechanism currently declared in data/errata.tsv:
+# delete the codepoint at a fixed index if, and only if, it is the specific
+# spurious mark named in docs/ERRATA.md E1. This is never a textual
+# search-and-replace and it never constructs new Arabic -- it only ever
+# deletes one already-present, hash-verified codepoint at a fixed position.
+#
+# Note what this rule does NOT protect against. 175 of the 6236 ayat carry a
+# legitimate U+0651 at index 1, so a crafted errata row could strip a real
+# shadda from any of them and still satisfy both hashes -- whoever writes the
+# row computes them. The guard that actually stops that is
+# EXPECTED_CANONICAL_SHA256 above: the post-errata corpus must hash to a value
+# pinned in this file, in verify_pack.py, and in check_m1.py. Widening the
+# errata list therefore requires deliberately re-pinning three constants, in
+# two programs that share no code.
+ERRATUM_CODEPOINT_INDEX = 1
+ERRATUM_EXPECTED_CODEPOINT = 0x0651  # ARABIC SHADDA
 EXPECTED_SURAH_COUNT = 114
 EXPECTED_AYAH_COUNT = 6236
 EXPECTED_SAJDAH_COUNT = 15
@@ -110,7 +135,13 @@ def check_text_codepoints(label, text):
 
 def read_corpus(path):
     """Reads data/quran-uthmani.txt in binary, decodes utf-8 strict, asserts
-    the digest, parses into rows sorted by (surah, ayah)."""
+    the digest, parses into rows sorted by (surah, ayah).
+
+    Tanzil's own download format is exactly: EXPECTED_AYAH_COUNT
+    "surah|ayah|text" lines, then a trailer of blank lines and lines
+    starting with '#' (Tanzil's copyright/terms-of-use block). That trailer
+    is tolerated -- but only that: every trailer line must be blank or
+    start with '#', and it is never treated as ayah data."""
     with open(path, "rb") as f:
         raw = f.read()
     digest = hashlib.sha256(raw).hexdigest()
@@ -123,11 +154,22 @@ def read_corpus(path):
     if not text.endswith("\n"):
         raise BuildError("corpus does not end with a trailing newline")
     lines = text[:-1].split("\n")
-    if any(line == "" for line in lines):
-        raise BuildError("corpus contains a blank line")
+    if len(lines) < EXPECTED_AYAH_COUNT:
+        raise BuildError("corpus has %d line(s), fewer than the expected %d ayah lines" % (
+            len(lines), EXPECTED_AYAH_COUNT))
+
+    ayah_lines = lines[:EXPECTED_AYAH_COUNT]
+    trailer_lines = lines[EXPECTED_AYAH_COUNT:]
+    for i, line in enumerate(trailer_lines):
+        if line != "" and not line.startswith("#"):
+            raise BuildError(
+                "corpus trailer line %d (after the %d ayah lines) is neither blank nor "
+                "a '#' comment: %r" % (EXPECTED_AYAH_COUNT + i + 1, EXPECTED_AYAH_COUNT, line[:60]))
+    if any(line == "" for line in ayah_lines):
+        raise BuildError("corpus contains a blank line among its first %d (ayah) lines" % EXPECTED_AYAH_COUNT)
 
     rows = []
-    for line in lines:
+    for line in ayah_lines:
         parts = line.split("|", 2)
         if len(parts) != 3:
             raise BuildError("corpus line %r is not surah|ayah|text" % (line,))
@@ -143,6 +185,90 @@ def read_corpus(path):
         raise BuildError("corpus lines are not in ascending (surah, ayah) order")
 
     return rows
+
+
+def read_errata(path):
+    """Reads data/errata.tsv: '#' comment / blank lines skipped, otherwise
+    surah<TAB>ayah<TAB>sha256(before)<TAB>sha256(after)<TAB>note. Returns a
+    list of (surah:int, ayah:int, before:str, after:str, note:str), in file
+    order. Never reads or infers any Arabic text from this file -- it holds
+    hashes only."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    text = raw.decode("utf-8", errors="strict")
+    if text.count("\r") > 0:
+        raise BuildError("data/errata.tsv contains a \\r byte")
+
+    rows = []
+    body = text[:-1] if text.endswith("\n") else text
+    for lineno, line in enumerate(body.split("\n"), start=1):
+        if line == "" or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 5:
+            raise BuildError("data/errata.tsv line %d is not surah<TAB>ayah<TAB>before<TAB>after<TAB>note: %r" % (
+                lineno, line))
+        s_str, a_str, before, after, note = parts
+        if str(int(s_str)) != s_str or str(int(a_str)) != a_str:
+            raise BuildError("data/errata.tsv line %d: surah/ayah do not round-trip as int:int" % lineno)
+        for label, h in (("before", before), ("after", after)):
+            if len(h) != 64 or h.lower() != h or any(c not in "0123456789abcdef" for c in h):
+                raise BuildError("data/errata.tsv line %d: %s hash %r is not a 64-char lowercase hex sha256" % (
+                    lineno, label, h))
+        if not note:
+            raise BuildError("data/errata.tsv line %d: note field is empty" % lineno)
+        rows.append((int(s_str), int(a_str), before, after, note))
+    return rows
+
+
+def apply_errata(rows, errata):
+    """rows: corpus rows, sorted by (surah, ayah). errata: as returned by
+    read_errata(). For each declared erratum: locate the ayah, verify
+    sha256(current) == before, apply the one declared structural edit,
+    verify sha256(result) == after. Any mismatch is a hard failure. Never a
+    textual search-and-replace, never constructs Arabic -- only ever
+    deletes one already-present, hash-verified codepoint at a fixed index.
+
+    Returns (new_rows, applied) where applied is [(surah, ayah, note), ...]
+    in the order errata.tsv declared them."""
+    by_key = {(s, a): text for s, a, text in rows}
+    seen_refs = set()
+    applied = []
+    for surah, ayah, before, after, note in errata:
+        ref = (surah, ayah)
+        if ref in seen_refs:
+            raise BuildError("data/errata.tsv declares %d:%d more than once" % ref)
+        seen_refs.add(ref)
+        if ref not in by_key:
+            raise BuildError("data/errata.tsv references %d:%d, which is not in the corpus" % ref)
+
+        current = by_key[ref]
+        actual_before = hashlib.sha256(current.encode("utf-8")).hexdigest()
+        if actual_before != before:
+            raise BuildError(
+                "erratum %d:%d: sha256(current text) = %s, data/errata.tsv says before = %s "
+                "-- either the erratum was already applied, or Tanzil's upstream text has "
+                "changed; see docs/ERRATA.md" % (surah, ayah, actual_before, before))
+
+        if (len(current) <= ERRATUM_CODEPOINT_INDEX
+                or ord(current[ERRATUM_CODEPOINT_INDEX]) != ERRATUM_EXPECTED_CODEPOINT):
+            raise BuildError(
+                "erratum %d:%d: expected U+%04X at codepoint index %d, found something else "
+                "despite the before-hash matching -- refusing to guess" % (
+                    surah, ayah, ERRATUM_EXPECTED_CODEPOINT, ERRATUM_CODEPOINT_INDEX))
+
+        fixed = current[:ERRATUM_CODEPOINT_INDEX] + current[ERRATUM_CODEPOINT_INDEX + 1:]
+        actual_after = hashlib.sha256(fixed.encode("utf-8")).hexdigest()
+        if actual_after != after:
+            raise BuildError(
+                "erratum %d:%d: applying it produced sha256 = %s, data/errata.tsv says after = %s" % (
+                    surah, ayah, actual_after, after))
+
+        by_key[ref] = fixed
+        applied.append((surah, ayah, note))
+
+    new_rows = [(s, a, by_key[(s, a)]) for s, a, _t in rows]
+    return new_rows, applied
 
 
 def read_meta(path):
@@ -266,6 +392,10 @@ def build(root, out_path, build_date):
     rows = read_corpus(corpus_path)
     per_surah = run_corpus_assertions(rows)
 
+    errata_path = os.path.join(root, "data", "errata.tsv")
+    errata = read_errata(errata_path)
+    rows, applied_errata = apply_errata(rows, errata)
+
     with open(meta_path, "rb") as f:
         meta_bytes = f.read()
     meta_digest = hashlib.sha256(meta_bytes).hexdigest()
@@ -299,7 +429,17 @@ def build(root, out_path, build_date):
     missing = EXPECTED_AYAH_COUNT - covered
     overlapping = 0
 
-    corpus_digest = hashlib.sha256(open(corpus_path, "rb").read()).hexdigest()
+    vendored_digest = hashlib.sha256(open(corpus_path, "rb").read()).hexdigest()
+
+    canonical_bytes = bytearray()
+    for s, a, t in sorted(rows, key=lambda r: (r[0], r[1])):
+        canonical_bytes += ("%d|%d|%s\n" % (s, a, t)).encode("utf-8")
+    corpus_digest = hashlib.sha256(bytes(canonical_bytes)).hexdigest()
+    if corpus_digest != EXPECTED_CANONICAL_SHA256:
+        raise BuildError("post-errata canonical digest = %s, expected %s" % (
+            corpus_digest, EXPECTED_CANONICAL_SHA256))
+
+    errata_ids = ", ".join("%s (%d:%d)" % (note.split()[0], s, a) for s, a, note in applied_errata)
 
     surah_by_id = {row["number"]: row for row in meta["surahs"]}
 
@@ -367,6 +507,8 @@ def build(root, out_path, build_date):
                 ("surah_count", str(EXPECTED_SURAH_COUNT)),
                 ("ayah_count", str(EXPECTED_AYAH_COUNT)),
                 ("builder", BUILDER),
+                ("errata_count", str(len(applied_errata))),
+                ("errata_ids", errata_ids),
             ], key=lambda kv: kv[0])
             conn.executemany("INSERT INTO meta (key, value) VALUES (?, ?)", meta_rows)
 
@@ -425,9 +567,11 @@ def build(root, out_path, build_date):
         json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
         f.write("\n")
 
-    print("corpus sha256 = %s" % corpus_digest)
+    print("vendored corpus sha256 = %s" % vendored_digest)
+    print("post-errata canonical sha256 = %s" % corpus_digest)
     print("db sha256 = %s" % db_digest)
     print("surahs = %d, ayat = %d" % (EXPECTED_SURAH_COUNT, len(rows)))
+    print("errata applied = %d (%s)" % (len(applied_errata), errata_ids or "none"))
     print("sajdah = %d (derived)" % len(sajdah_set))
     print("juz partition: %d covered / %d missing / %d overlapping" % (covered, missing, overlapping))
     print("RESULT: PASS")

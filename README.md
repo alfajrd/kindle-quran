@@ -82,8 +82,10 @@ desktop?**
 1. Open **"Qur'an — pack self-test"**. Record: `pack_id`, `build_date`,
    `surah_count` / `ayah_count` (should read `114` / `6236`, counted from the
    tables, not trusted from `meta`), `checksum` (should read
-   `5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621`), and
-   the `2:255 pin` line (should read `MATCH`).
+   `9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa` — the
+   pack's own post-errata content digest, not the vendored file's digest;
+   see `data/SOURCE.md`), `errata_count` (should read `2`), and the `2:255
+   pin` line (should read `MATCH`).
 2. Open **"Qur'an — test ayah (2:255)"**. The Arabic shown must render
    identically to the Milestone 0 photo (same shaping, same joining, same
    harakat, no tofu) — it is now sourced from the pack, not from the

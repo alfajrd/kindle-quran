@@ -34,7 +34,9 @@ except ImportError:
     lua_ast = None
     lua_astnodes = None
 
-EXPECTED_CORPUS_SHA256 = "5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621"
+# The vendored file's digest, exactly as Tanzil shipped it (byte-exact,
+# including its trailing blank-line-plus-'#'-comment copyright block).
+EXPECTED_CORPUS_SHA256 = "18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1"
 EXPECTED_SURAH_COUNT = 114
 EXPECTED_AYAH_COUNT = 6236
 EXPECTED_SAJDAH_COUNT = 15
@@ -71,6 +73,8 @@ FILES_TO_CREATE = [
     os.path.join("data", "surah_meta.json"),
     os.path.join("data", "surah_meta.sha256"),
     os.path.join("data", "SOURCE.md"),
+    os.path.join("data", "errata.tsv"),
+    os.path.join("docs", "ERRATA.md"),
     os.path.join("tools", "import_corpus.py"),
     os.path.join("tools", "build_pack.py"),
     os.path.join("tools", "verify_pack.py"),
@@ -106,6 +110,12 @@ def check_c2(root):
 
 
 def check_c3(root):
+    # Tanzil's own download format is exactly EXPECTED_AYAH_COUNT
+    # "surah|ayah|text" lines, followed by a trailer of blank lines and
+    # lines starting with '#' (Tanzil's copyright/terms-of-use block). The
+    # previous, mirror-sourced vendored file had no such trailer; the real
+    # Tanzil download always does, so this check tolerates -- and validates
+    # -- that trailer instead of rejecting it. See docs/BUILD.md.
     txt_path = os.path.join(root, "data", "quran-uthmani.txt")
     if not os.path.isfile(txt_path):
         record("C3", False, "data/quran-uthmani.txt does not exist")
@@ -122,15 +132,27 @@ def check_c3(root):
         record("C3", False, "does not decode as UTF-8: %s" % exc)
         return
     if not text.endswith("\n"):
-        reasons.append("does not end with exactly one trailing \\n")
-    elif text.endswith("\n\n"):
-        reasons.append("ends with more than one trailing newline")
+        reasons.append("does not end with a trailing \\n")
     body = text[:-1] if text.endswith("\n") else text
     lines = body.split("\n")
-    if len(lines) != EXPECTED_AYAH_COUNT:
-        reasons.append("has %d lines, expected exactly %d" % (len(lines), EXPECTED_AYAH_COUNT))
+    if len(lines) < EXPECTED_AYAH_COUNT:
+        reasons.append("has %d line(s), fewer than the expected %d ayah lines" % (
+            len(lines), EXPECTED_AYAH_COUNT))
+        check_boolean("C3", not reasons,
+                       "corpus file is well-formed: %d ayah lines, ascending (surah, ayah), "
+                       "no CR/BOM/blank lines among them, trailer (if any) is blank/'#' only" % EXPECTED_AYAH_COUNT,
+                       "; ".join(reasons))
+        return
+
+    ayah_lines = lines[:EXPECTED_AYAH_COUNT]
+    trailer_lines = lines[EXPECTED_AYAH_COUNT:]
+    for i, line in enumerate(trailer_lines):
+        if line != "" and not line.startswith("#"):
+            reasons.append("trailer line %d is neither blank nor a '#' comment: %r" % (
+                EXPECTED_AYAH_COUNT + i + 1, line[:40]))
+
     prev = None
-    for i, line in enumerate(lines):
+    for i, line in enumerate(ayah_lines):
         if line == "":
             reasons.append("line %d is blank" % (i + 1))
             continue
@@ -150,7 +172,8 @@ def check_c3(root):
             reasons.append("line %d: not ascending (surah, ayah)" % (i + 1))
         prev = (s, a)
     check_boolean("C3", not reasons,
-                   "corpus file is well-formed: %d lines, ascending (surah, ayah), no CR/BOM/blank lines" % EXPECTED_AYAH_COUNT,
+                   "corpus file is well-formed: %d ayah lines, ascending (surah, ayah), "
+                   "no CR/BOM/blank lines among them, trailer (if any) is blank/'#' only" % EXPECTED_AYAH_COUNT,
                    "; ".join(reasons))
 
 

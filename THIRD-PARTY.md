@@ -10,28 +10,38 @@ these obligations travel with you.
 
 - **File (Milestone 0 pin):** `quran.koplugin/data/2_255.txt`, and the
   verbatim literal inside `quran.koplugin/main.lua`
-- **File (Milestone 1, the whole text):** `data/quran-uthmani.txt` — all
-  6236 ayat, `surah|ayah|text` per line, vendored and pinned by SHA-256
-  (`5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621`).
+- **File (whole text):** `data/quran-uthmani.txt` — all 6236 ayat,
+  `surah|ayah|text` per line, plus Tanzil's own trailing copyright block,
+  vendored byte-exact and pinned by SHA-256
+  (`18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1`).
   Built into `quran.koplugin/data/quran.db`, which carries the same
-  attribution and terms in its `meta` table.
-- **Source:** Tanzil Qur'an Text (Uthmani) — <https://tanzil.net>. The
-  whole-text file was obtained via alquran.cloud's `quran-uthmani`
-  redistribution of that same Tanzil edition (tanzil.net serves the text
-  through a download form, not a fetchable URL — see `data/SOURCE.md` and
-  `docs/BUILD.md` for the full chain and the independent-verification
-  procedure).
+  attribution and terms in its `meta` table, along with a `meta.checksum`
+  of the pack's own content (post-errata, see below):
+  `9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa`.
+- **Source:** Tanzil Qur'an Text (Uthmani) — <https://tanzil.net>, a
+  **direct download** from Tanzil's own download form (see `data/SOURCE.md`
+  and `docs/BUILD.md` for the full chain and the independent-verification
+  procedure). An earlier revision of this repository sourced the whole text
+  indirectly, via alquran.cloud's `quran-uthmani` mirror; that mirror
+  turned out to differ from Tanzil's own text in material ways (only 2561
+  of 6236 ayat matched byte-for-byte) and has been replaced outright, not
+  edited.
 - **Attribution string:** `Tanzil Qur'an Text (Uthmani), https://tanzil.net`
 
 **Licence: Creative Commons Attribution 3.0 (CC BY 3.0)**, per Tanzil's
 Terms of Use. Its terms require that the Qur'anic Arabic text be
 redistributed **unmodified** and that Tanzil be credited. Both are honoured:
 
-- the bytes are copied unchanged, pinned by SHA-256
-  (2:255: `920a0a6c784cd0ec7dae3a75c1539fae4cf7b31051880f5085e4cd5239de06f8`;
-  whole text: `5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621`)
+- the vendored bytes are copied unchanged, pinned by SHA-256
+  (2:255: `b036974542211b4c684147cc80b1943b932229e7d59d8e872035144f4aaaef9c`;
+  whole text as vendored: `18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1`)
 - `tools/check_m0.py`, `tools/build_pack.py` and `tools/verify_pack.py` all
-  fail loudly if a single byte changes
+  fail loudly if a single byte of the vendored text changes
+- one confirmed defect in the vendored text (a spurious mark on the basmala
+  of 95:1 and 97:1; see `docs/ERRATA.md` E1) is corrected **only at build
+  time**, from a declared, hash-verified erratum
+  (`data/errata.tsv`) — the vendored file itself is never edited, which is
+  what "unmodified" requires
 - full provenance is recorded in `quran.koplugin/data/SOURCE.md` (2:255) and
   `data/SOURCE.md` (the whole text)
 
@@ -83,6 +93,13 @@ Tanzil's Uthmani edition carries a spurious `U+0651` SHADDA on the basmala of
 editions do not have it, which identifies it as an upstream defect rather
 than a variant reading.
 
-It is **not corrected here.** "Unmodified" means unmodified, and editing
-scripture to tidy a checksum is not a licence-compliant act. See
-`docs/ERRATA.md` for the evidence and the decision.
+It is **not corrected in the vendored file.** "Unmodified" means unmodified,
+and editing scripture to tidy a checksum is not a licence-compliant act.
+`data/quran-uthmani.txt` still carries the defect, byte-exact, forever. The
+correction is applied only at **build time**, from a declared, hash-verified
+erratum in `data/errata.tsv` (`tools/build_pack.py` locates the ayah,
+verifies the hash before, applies one hash-verified codepoint deletion,
+verifies the hash after — any mismatch is a hard build failure), so the
+*pack* (`quran.koplugin/data/quran.db`) carries the corrected text while the
+*vendored source* does not. See `docs/ERRATA.md` for the evidence and the
+decision.

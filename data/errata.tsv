@@ -1,0 +1,6 @@
+# Declared corrections to the vendored Tanzil text.
+# The vendored file stays byte-exact; build_pack.py applies these.
+# Format: surah<TAB>ayah<TAB>sha256(before)<TAB>sha256(after)<TAB>note
+# See docs/ERRATA.md for the evidence.
+95	1	da9f21d002df53bf94ed5a3b567153a675a9fc6a0a1ebdc0de366812e56ae6c9	1e01f20fba7652508755f9808d04405f68116fd284c642b3abe6ebcea1e1eda6	E1 remove spurious U+0651 SHADDA at index 1 of the basmala prefix
+97	1	fa0a72a41230de5ddea306626453e083de69da9f88722365139788540d3ea9d6	3e268f5464393be54903bc7b9c9f6fb220a6f3a6fbfd7c3093c1e043f487c7d1	E1 remove spurious U+0651 SHADDA at index 1 of the basmala prefix

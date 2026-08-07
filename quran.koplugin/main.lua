@@ -59,7 +59,7 @@ local ARABIC_FONT = "ScheherazadeNew-Regular.ttf"
 local ARABIC_FONT_SIZE = 34
 
 -- BEGIN VERBATIM TANZIL UTHMANI 2:255 -- DO NOT EDIT, DO NOT NORMALISE, DO NOT REFLOW
-local PIN_2_255 = [==[ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ ۚ لَا تَأْخُذُهُۥ سِنَةٌۭ وَلَا نَوْمٌۭ ۚ لَّهُۥ مَا فِى ٱلسَّمَٰوَٰتِ وَمَا فِى ٱلْأَرْضِ ۗ مَن ذَا ٱلَّذِى يَشْفَعُ عِندَهُۥٓ إِلَّا بِإِذْنِهِۦ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَىْءٍۢ مِّنْ عِلْمِهِۦٓ إِلَّا بِمَا شَآءَ ۚ وَسِعَ كُرْسِيُّهُ ٱلسَّمَٰوَٰتِ وَٱلْأَرْضَ ۖ وَلَا يَـُٔودُهُۥ حِفْظُهُمَا ۚ وَهُوَ ٱلْعَلِىُّ ٱلْعَظِيمُ]==]
+local PIN_2_255 = [==[ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ ۚ لَا تَأْخُذُهُۥ سِنَةٌ وَلَا نَوْمٌ ۚ لَّهُۥ مَا فِى ٱلسَّمَٰوَٰتِ وَمَا فِى ٱلْأَرْضِ ۗ مَن ذَا ٱلَّذِى يَشْفَعُ عِندَهُۥٓ إِلَّا بِإِذْنِهِۦ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَىْءٍ مِّنْ عِلْمِهِۦٓ إِلَّا بِمَا شَآءَ ۚ وَسِعَ كُرْسِيُّهُ ٱلسَّمَٰوَٰتِ وَٱلْأَرْضَ ۖ وَلَا يَـُٔودُهُۥ حِفْظُهُمَا ۚ وَهُوَ ٱلْعَلِىُّ ٱلْعَظِيمُ]==]
 -- END VERBATIM
 -- D5: PIN_2_255 is now a tripwire only. At runtime the plugin reads 2:255
 -- from data/quran.db and displays THAT; PIN_2_255 is only ever compared
@@ -272,6 +272,12 @@ See /mnt/us/koreader/crash.log",
     local pack_id = DB.getMeta(conn, "pack_id") or "<missing>"
     local build_date = DB.getMeta(conn, "build_date") or "<missing>"
     local checksum = DB.getMeta(conn, "checksum") or "<missing>"
+    -- Disclosed deliberately: the pack is NOT byte-identical to the vendored
+    -- Tanzil file. Showing the licence line without this would tell a reader
+    -- the text must not be modified while quietly not mentioning that two
+    -- codepoints were. See docs/ERRATA.md.
+    local errata_count = DB.getMeta(conn, "errata_count") or "0"
+    local errata_ids = DB.getMeta(conn, "errata_ids") or ""
     local surah_count, ayah_count = DB.counts(conn)
 
     local pin_text, pin_err = DB.getAyah(conn, 2, 255)
@@ -295,6 +301,8 @@ See /mnt/us/koreader/crash.log",
         "ayah_count: " .. tostring(ayah_count),
         "checksum: " .. checksum,
         "2:255 pin: " .. pin_status,
+        "errata applied: " .. errata_count ..
+            (errata_ids ~= "" and (" (" .. errata_ids .. ")") or ""),
     }
     UIManager:show(InfoMessage:new{
         text = table.concat(lines, "\n"),

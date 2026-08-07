@@ -10,9 +10,9 @@ the two files in this directory.
 
 | Trusted input | What verified it |
 |---|---|
-| `quran-uthmani.txt` — the corpus | 114 surahs / 6236 ayat / contiguous numbering, checked structurally by `tools/import_corpus.py` and re-checked on every `tools/build_pack.py` run; 2:255 hashes to the exact pin a human reviewed codepoint-by-codepoint in Milestone 0; canonical digest `5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621` |
+| `quran-uthmani.txt` — the corpus | 114 surahs / 6236 ayat / contiguous numbering, checked structurally on every `tools/build_pack.py` run (`tools/import_corpus.py` is retained for audit history but is no longer the path that produced this file — see "Retrieval chain" below); 2:255 hashes to `b036974542211b4c684147cc80b1943b932229e7d59d8e872035144f4aaaef9c`; vendored (byte-exact, as downloaded) digest `18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1`; post-errata canonical digest (what the pack actually contains, after `data/errata.tsv` is applied — see "The errata mechanism" below) `9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa` |
 | `surah_meta.json` — 114 surah rows, sajdah refs, juz starts | Cross-validated against the corpus: all 114 `ayah_count` values match the per-surah counts in the corpus exactly. Two independent representations agreeing, not one source asserting. Its `sajdah` list matches a U+06E9 scan of the corpus (15 marks, both directions); its `juz_start` values form an exact partition of all 6236 ayat (0 missing, 0 overlapping) |
-| `quran.koplugin/data/2_255.txt` | Reviewed by a human, byte by byte, at Milestone 0 |
+| `quran.koplugin/data/2_255.txt` | Reviewed by a human, byte by byte, at Milestone 0; re-pinned when the corpus was replaced with the direct Tanzil download (see below) |
 
 Every one of those verifications is re-asserted by the pipeline, in the
 pack, at build time and at verify time (`tools/build_pack.py`,
@@ -20,39 +20,60 @@ pack, at build time and at verify time (`tools/build_pack.py`,
 
 ## Retrieval chain, as it actually happened
 
-- **`quran-uthmani.txt`**: Tanzil Uthmani edition of the Qur'an text,
-  obtained via **alquran.cloud's `quran-uthmani` edition**, which
-  redistributes the Tanzil Uthmani text. This is **not** a direct download
-  from tanzil.net — tanzil.net serves its text through a download form, and
-  direct file URLs 404, so an unattended fetch from Tanzil directly was not
-  possible. The bulk fetch was staged for this milestone's coder at
-  `.pipeline/quran_uthmani_full.json` (keys `"surah:ayah"`, UTF-8) before
-  implementation began; `tools/import_corpus.py` turned that staged JSON,
-  unmodified, into the two files in this directory. The coder that ran the
-  import did not re-fetch, retype, or re-derive the Arabic.
-- **Tie to the already-reviewed text**: 2:255, extracted from this bulk
-  corpus, hashes to the exact pin already shipped and independently
-  reviewed codepoint-by-codepoint in Milestone 0
-  (`920a0a6c784cd0ec7dae3a75c1539fae4cf7b31051880f5085e4cd5239de06f8`,
-  see `quran.koplugin/data/SOURCE.md`). The bulk corpus is therefore the
-  same edition as the text already in this repository.
-- **`surah_meta.json`**: 114 surah names (Arabic, transliteration, English
-  meaning), ayah counts, revelation type, the sajdah cross-check list and
-  the juz-start map, staged at `.pipeline/surah_meta.json` and copied
-  through byte-for-byte by `tools/import_corpus.py`.
+- **`quran-uthmani.txt`**: a **direct download from tanzil.net's own
+  download form** (the Uthmani edition, `quran-uthmani.txt`), supplied for
+  this milestone and vendored here **byte-exact**, including Tanzil's own
+  trailing copyright/terms-of-use block (blank lines followed by lines
+  starting with `#`). Earlier revisions of this repository sourced the
+  corpus indirectly, via alquran.cloud's `quran-uthmani` mirror of the
+  Tanzil text; that mirror differed from a genuine Tanzil download in
+  material ways (different hamza encoding, different meem signs — only 2561
+  of 6236 ayat matched byte-for-byte against this direct download). This
+  file **replaces** that mirror-sourced corpus outright; nothing here is an
+  edit of the old file, it is a new vendored file from a new, authoritative
+  download. `tools/import_corpus.py` (the JSON-staged importer used for the
+  old, mirror-sourced corpus) is kept for audit history but is **not** the
+  path that produced the file now committed here — see the note at the top
+  of that script.
+- **`surah_meta.json`**: unaffected by the corpus replacement — still 114
+  surah names (Arabic, transliteration, English meaning), ayah counts,
+  revelation type, the sajdah cross-check list and the juz-start map,
+  cross-validated against the new corpus exactly as it was against the old
+  one (see the table above).
 
-## The defect found and corrected
+## The defect found and corrected (Milestone 1, mirror-sourced corpus)
 
 The alquran.cloud response prepended a **U+FEFF byte-order mark to 1:1** —
 the opening ayah of Al-Fatiha. Left alone it would have been stored as part
 of the text and rendered as an invisible character at the very start of the
 Qur'an. It was stripped (leading U+FEFF only; nothing else altered) before
-the corpus was staged for this milestone, and the staged JSON, the corpus
-digest above, and every copy in this repository all reflect the cleaned
-text. `tools/import_corpus.py`, `tools/build_pack.py` and
-`tools/verify_pack.py` each independently assert **zero U+FEFF anywhere, at
-every stage** — this is a transport-layer artefact, a defect to reject
-loudly, never to silently pass through.
+that corpus was staged, in the milestone that has since been replaced by
+the direct Tanzil download described above. `tools/import_corpus.py`,
+`tools/build_pack.py` and `tools/verify_pack.py` each independently still
+assert **zero U+FEFF anywhere, at every stage** — kept as a permanent guard
+against this class of transport-layer artefact, not because the current
+vendored file is known to carry one.
+
+## The errata mechanism — corrections without editing the vendored file
+
+`data/quran-uthmani.txt` stays byte-exact as Tanzil shipped it, forever —
+that is what makes the "diff against a hand-downloaded Tanzil file" check in
+`docs/BUILD.md` meaningful, and it is what Tanzil's redistribution terms
+require. A confirmed defect in that vendored text (`docs/ERRATA.md` E1: a
+spurious `U+0651` SHADDA on the basmala of 95:1 and 97:1, present in none of
+the other 111 surahs and absent from Tanzil's own simple/minimal editions)
+is therefore **not** corrected in the vendored file. It is corrected **at
+build time**, from a declared, hash-verified erratum in `data/errata.tsv`:
+`tools/build_pack.py` locates the ayah, verifies `sha256(current) ==
+before`, applies the one declared structural edit (delete one specific,
+already-present, hash-verified codepoint — never a textual
+search-and-replace, never a constructed replacement string), and verifies
+`sha256(result) == after`. Any mismatch — including Tanzil quietly fixing
+this upstream, which would make `before` stop matching — is a hard build
+failure, not a silent pass. The pack's `meta` table records how many errata
+were applied and their ids (`errata_count`, `errata_ids`) so a future About
+screen can disclose them. See `docs/ERRATA.md` for the full evidence and
+decision record.
 
 ## Tanzil's terms
 
@@ -68,16 +89,28 @@ display them (`attribution`, `licence`, `terms` keys — see the schema in
 ## The digests
 
 ```
-sha256(data/quran-uthmani.txt)  = 5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621
-sha256(data/surah_meta.json)    = e476c61626ccf1f2d8f3fd76727dbb144a3dd52e75a416de5d1e52bb5dd54bb1
+sha256(data/quran-uthmani.txt), as vendored (byte-exact) = 18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1
+sha256 of the post-errata canonical serialisation          = 9ce47bd964c51283a4d31a36f0a8529723a82feb3900551de31e323e09a611aa
+sha256(data/surah_meta.json)                                = e476c61626ccf1f2d8f3fd76727dbb144a3dd52e75a416de5d1e52bb5dd54bb1
 ```
 
-One number — the corpus digest — is checked in five places: the file
-itself, `data/quran-uthmani.sha256`, `quran.koplugin/data/quran.db`'s
-`meta.checksum` row, `quran.koplugin/data/manifest.json`'s
-`corpus_sha256`, and the literal constant duplicated (deliberately — see
-D4 in `.pipeline/spec.md`) in `tools/build_pack.py`, `tools/verify_pack.py`
-and `tools/check_m1.py`.
+These are two different numbers with two different jobs, and this
+distinction is deliberate, not an inconsistency:
+
+- The **vendored digest** is checked against the committed file itself and
+  `data/quran-uthmani.sha256`, and proves the vendored file has not been
+  touched since it was downloaded — it is the number a byte-exact
+  redistribution obligation cares about.
+- The **post-errata canonical digest** is what `quran.koplugin/data/quran.db`'s
+  `meta.checksum` row and `quran.koplugin/data/manifest.json`'s
+  `corpus_sha256` carry, because that is what the pack's `ayah` table
+  actually contains (the two declared corrections in `data/errata.tsv`
+  applied) — it is the number an on-device self-test cares about.
+
+Both are duplicated as literal constants (deliberately — see D4 in
+`.pipeline/spec.md`) in `tools/build_pack.py` and `tools/verify_pack.py`;
+`tools/check_m1.py` and `tools/import_corpus.py` duplicate the vendored
+digest only.
 
 ## Independent verification (the only thing that proves Tanzil provenance)
 

@@ -91,6 +91,34 @@ def make_mutant_copy():
     return tmp, dst
 
 
+def run_build_pack(root):
+    """Runs the copy's own tools/build_pack.py as a subprocess. Returns
+    (returncode, stdout+stderr)."""
+    proc = subprocess.run(
+        [sys.executable, os.path.join(root, "tools", "build_pack.py"), "--root", root],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def read_vendored_ayah(root, surah, ayah):
+    """Independently parses data/quran-uthmani.txt's own copy to fetch one
+    ayah's exact text -- copying bytes, never retyping Arabic."""
+    path = os.path.join(root, CORPUS_TXT_REL)
+    text = read_bytes(path).decode("utf-8")
+    body = text[:-1] if text.endswith("\n") else text
+    for line in body.split("\n"):
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        s_str, a_str, ayah_text = parts
+        if s_str == str(surah) and a_str == str(ayah):
+            return ayah_text
+    raise AssertionError("could not find %d:%d in %s" % (surah, ayah, path))
+
+
 def run_checker(root):
     """Runs the REAL, unmodified tools/check_m1.py (from the copy, which
     itself shells out to the copy's own check_m0.py/verify_pack.py) against
@@ -144,13 +172,22 @@ def test_clean_tree_passes():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_drop_last_line_of_corpus_is_caught():
+def test_drop_last_ayah_line_of_corpus_is_caught():
+    # The vendored corpus is Tanzil's own download: EXPECTED_AYAH_COUNT
+    # "surah|ayah|text" lines, THEN a trailer of blank lines and lines
+    # starting with '#' (Tanzil's copyright block). Dropping the file's
+    # literal last line would only remove trailer prose, not ayah data --
+    # so this drops the last genuine AYAH line (114:6) instead, which is
+    # what should actually break structural validity.
     tmp, dst = make_mutant_copy()
     try:
         path = os.path.join(dst, CORPUS_TXT_REL)
         text = read_bytes(path).decode("utf-8")
-        lines = text.splitlines(keepends=True)
-        new_text = "".join(lines[:-1])
+        body = text[:-1] if text.endswith("\n") else text
+        lines = body.split("\n")
+        EXPECTED_AYAH_COUNT = 6236
+        del lines[EXPECTED_AYAH_COUNT - 1]
+        new_text = "\n".join(lines) + "\n"
         write_bytes(path, new_text.encode("utf-8"))
         code, statuses, stdout = run_checker(dst)
         assert code == 1, stdout
@@ -439,6 +476,98 @@ def test_main_lua_displaying_pin_is_caught():
         code, statuses, stdout = run_checker(dst)
         assert code == 1, stdout
         assert_failed(statuses, stdout, "C6")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Errata mechanism -- these exercise tools/build_pack.py directly, since
+# check_m1.py never rebuilds the pack (it only checks already-built
+# artefacts). Every mutation below still only ever copies bytes that are
+# already present in the tree (from data/errata.tsv or
+# data/quran-uthmani.txt) -- never retypes or constructs Arabic.
+# ---------------------------------------------------------------------------
+
+ERRATA_TSV_REL = os.path.join("data", "errata.tsv")
+
+
+def test_errata_before_hash_mismatch_is_caught():
+    tmp, dst = make_mutant_copy()
+    try:
+        path = os.path.join(dst, ERRATA_TSV_REL)
+        text = read_bytes(path).decode("utf-8")
+        # Corrupt the 'before' hash of the 95:1 row (first hex character
+        # flipped) so it can never match sha256(current text) -- this is
+        # exactly the "Tanzil already fixed it upstream" scenario the build
+        # must refuse to silently paper over.
+        mutated = text.replace("95\t1\tda9f21d0", "95\t1\tea9f21d0")
+        assert mutated != text, "test fixture assumption broken: before-hash prefix not found"
+        write_bytes(path, mutated.encode("utf-8"))
+        code, stdout = run_build_pack(dst)
+        assert code == 1, stdout
+        assert "BUILD FAILED" in stdout, stdout
+        assert "before" in stdout.lower(), stdout
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_erratum_applied_twice_is_caught():
+    tmp, dst = make_mutant_copy()
+    try:
+        path = os.path.join(dst, ERRATA_TSV_REL)
+        text = read_bytes(path).decode("utf-8")
+        lines = text.split("\n")
+        data_lines = [l for l in lines if l and not l.startswith("#")]
+        ninety_five = next(l for l in data_lines if l.startswith("95\t1\t"))
+        # Duplicate the 95:1 row. The first application succeeds; the
+        # second finds sha256(current) already equals 'after', not
+        # 'before', and must fail -- never silently re-apply or no-op.
+        mutated = text.rstrip("\n") + "\n" + ninety_five + "\n"
+        write_bytes(path, mutated.encode("utf-8"))
+        code, stdout = run_build_pack(dst)
+        assert code == 1, stdout
+        assert "BUILD FAILED" in stdout, stdout
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_tampered_errata_tsv_is_caught():
+    tmp, dst = make_mutant_copy()
+    try:
+        path = os.path.join(dst, ERRATA_TSV_REL)
+        text = read_bytes(path).decode("utf-8")
+        # Truncate the 95:1 row's 'after' hash to a malformed length --
+        # structurally invalid, not just a wrong value.
+        mutated = text.replace(
+            "1e01f20fba7652508755f9808d04405f68116fd284c642b3abe6ebcea1e1eda6",
+            "1e01f20f",
+        )
+        assert mutated != text, "test fixture assumption broken: after-hash not found"
+        write_bytes(path, mutated.encode("utf-8"))
+        code, stdout = run_build_pack(dst)
+        assert code == 1, stdout
+        assert "BUILD FAILED" in stdout, stdout
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_pack_with_shadda_not_removed_is_caught():
+    # Build cleanly, then tamper with the already-built db directly,
+    # reverting 95:1 back to its pre-erratum (still-shadda'd) text -- the
+    # exact bytes copied from data/quran-uthmani.txt (the vendored file
+    # still legitimately carries the defect), never retyped. verify_pack.py
+    # must catch this via P29 (and P16, since the pack-wide digest also
+    # shifts).
+    tmp, dst = make_mutant_copy()
+    try:
+        before_text = read_vendored_ayah(dst, 95, 1)
+
+        def mutate(conn):
+            conn.execute("UPDATE ayah SET text = ? WHERE surah = 95 AND ayah = 1;", (before_text,))
+        mutate_db(dst, mutate)
+        code, statuses, stdout = run_checker(dst)
+        assert code == 1, stdout
+        assert_failed(statuses, stdout, "P16", "P29")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

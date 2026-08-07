@@ -34,7 +34,15 @@ import json
 import os
 import sys
 
-EXPECTED_CORPUS_SHA256 = "5e6accd845ed3668a0ed45937a4626957b1f38d05598e3df573c6ad39fb45621"
+# NOTE: since Milestone 1's re-do, the committed `data/quran-uthmani.txt` no
+# longer comes from this importer's staged-JSON path -- it is a direct
+# Tanzil download, vendored byte-exact, including Tanzil's own trailing
+# copyright block, which this importer's canonical_bytes() output does not
+# reproduce. This script is kept for provenance/audit history and is not
+# part of the current build (`tools/build_pack.py` reads
+# `data/quran-uthmani.txt` directly); its constant is updated for
+# consistency but re-running it would not reproduce the committed file.
+EXPECTED_CORPUS_SHA256 = "18c719bb3ba26d32ef457f40dad77cd28c4c5a34156833e26a8e5fcfdd246fb1"
 EXPECTED_SURAH_COUNT = 114
 EXPECTED_AYAH_COUNT = 6236
 EXPECTED_SAJDAH_COUNT = 15
