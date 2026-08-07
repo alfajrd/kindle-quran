@@ -71,6 +71,33 @@ that means nothing there.
   on the page rather than inferred from a marker in a flow.
 - A rule between the Arabic and the translation would help separate them —
   related to the ruled-lines work in §9, and probably the same widget.
+- **Surah introductions.** Some translations (The Clear Quran among them) open
+  each surah with a short introduction — when it was revealed, its themes, how
+  it connects to the one before. Worth supporting: it is the part of a
+  translation that a plain verse-by-verse rendering loses entirely.
+
+  It belongs to the **translation pack**, not the Arabic pack — the intros are
+  the translator's own writing, with their own copyright, and a reader who
+  swaps translations should get that translation's intros. So the pack schema
+  needs a place for it:
+
+  ```sql
+  CREATE TABLE trans_surah_intro (
+    trans_id  TEXT NOT NULL,
+    surah     INTEGER NOT NULL,
+    text      TEXT NOT NULL,
+    PRIMARY KEY (trans_id, surah)
+  );
+  ```
+
+  Display: shown once when entering a surah, ahead of ayah 1, and skippable —
+  a reader returning to a surah for the tenth time does not want to page past
+  it every time. Position memory should treat it as before-ayah-1 rather than
+  as its own page, so resuming never lands on an intro the reader has read.
+
+  Note this makes the pack format richer than "verses in another language",
+  which is an argument for defining the side-loaded pack format properly
+  rather than treating it as a translation dump.
 
 ### Blocker — translation licensing
 
