@@ -37,12 +37,12 @@ end
 -- A plugin that throws while loading is skipped by KOReader without a
 -- word; failing soft here keeps M0/M1's two menu items working even if
 -- the M2 reader itself is broken on a given KOReader version.
-local ok_reader, Reader = pcall(require, "reader")
+local ok_reader, Reader = pcall(require, "quranreader")
 if not ok_reader then
     Reader = nil
 end
 
-local ok_settings, Settings = pcall(require, "settings")
+local ok_settings, Settings = pcall(require, "quransettings")
 if not ok_settings then
     Settings = nil
 end
@@ -362,7 +362,7 @@ function Quran:onQuranShowPackSelfTest()
 end
 
 -- Milestone 2: opens the reader. `surah == nil` means "last position"
--- (§5.1). This function owns the resources reader.lua only borrows: it
+-- (§5.1). This function owns the resources quranreader.lua only borrows: it
 -- opens the settings store once, opens the db connection once, constructs
 -- the Reader, and shows it -- see §5.2. If anything along the way fails,
 -- it shows the same style of path-naming InfoMessage the M0/M1 entry
@@ -378,7 +378,7 @@ function Quran:openReader(surah)
     end
     if not ok_settings or not Settings then
         UIManager:show(InfoMessage:new{
-            text = "Qur'an: settings.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            text = "Qur'an: quransettings.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
             show_icon = false,
             dismissable = true,
         })
@@ -449,7 +449,7 @@ function Quran:openReader(surah)
     }
 
     if not reader.init_ok then
-        -- reader.lua already showed a specific InfoMessage explaining why
+        -- quranreader.lua already showed a specific InfoMessage explaining why
         -- (edge cases 16-19). Reader:onCloseWidget() will never run for a
         -- reader that was never shown, so this function must release the
         -- resources it opened itself.

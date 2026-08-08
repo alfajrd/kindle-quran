@@ -123,8 +123,8 @@ def read_text(path):
 # ---------------------------------------------------------------------------
 
 M2_CREATE_FILES = [
-    os.path.join("quran.koplugin", "reader.lua"),
-    os.path.join("quran.koplugin", "settings.lua"),
+    os.path.join("quran.koplugin", "quranreader.lua"),
+    os.path.join("quran.koplugin", "quransettings.lua"),
     os.path.join("tools", "check_m2.py"),
     os.path.join("tools", "paging_model.py"),
     os.path.join("tests", "test_check_m2.py"),
@@ -207,14 +207,14 @@ def check_r2(root):
 # ---------------------------------------------------------------------------
 
 def check_r3(root):
-    path = os.path.join(root, "quran.koplugin", "reader.lua")
+    path = os.path.join(root, "quran.koplugin", "quranreader.lua")
     if not os.path.isfile(path):
         record("R3", False, "reader.lua does not exist")
         return
     src = strip_lua_comments(read_text(path))
     check_boolean("R3", 'require("ui/widget/textboxwidget")' in src,
                    "reader.lua contains require(\"ui/widget/textboxwidget\")",
-                   "require(\"ui/widget/textboxwidget\") not found in reader.lua")
+                   "require(\"ui/widget/textboxwidget\") not found in quranreader.lua")
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def blank_lua_comments(src):
 
 
 def check_r4(root):
-    path = os.path.join(root, "quran.koplugin", "reader.lua")
+    path = os.path.join(root, "quran.koplugin", "quranreader.lua")
     if not os.path.isfile(path):
         record("R4", False, "reader.lua does not exist")
         return
@@ -319,7 +319,7 @@ FORBIDDEN_STRING_CALLS = ("string.", ":gsub(", ":sub(", ":rep(", ":upper(", ":lo
 
 
 def check_r5(root):
-    path = os.path.join(root, "quran.koplugin", "reader.lua")
+    path = os.path.join(root, "quran.koplugin", "quranreader.lua")
     if not os.path.isfile(path):
         record("R5", False, "reader.lua does not exist")
         return
@@ -356,7 +356,7 @@ def check_r5(root):
 
 
 # ---------------------------------------------------------------------------
-# R6 -- MUST-VERIFY V<n> ids in reader.lua/settings.lua/db.lua == the ids
+# R6 -- MUST-VERIFY V<n> ids in quranreader.lua/settings.lua/db.lua == the ids
 # documented in docs/VERIFY-M2.md.
 #
 # Scoped to n >= 20: numbering "continues from M0/M1's V1-V16" (spec.md
@@ -397,8 +397,8 @@ def extract_doc_v_ids(doc_src):
 
 def check_r6(root):
     paths = {
-        "reader.lua": os.path.join(root, "quran.koplugin", "reader.lua"),
-        "settings.lua": os.path.join(root, "quran.koplugin", "settings.lua"),
+        "reader.lua": os.path.join(root, "quran.koplugin", "quranreader.lua"),
+        "settings.lua": os.path.join(root, "quran.koplugin", "quransettings.lua"),
         "db.lua": os.path.join(root, "quran.koplugin", "db.lua"),
     }
     doc_path = os.path.join(root, "docs", "VERIFY-M2.md")
@@ -427,7 +427,7 @@ def check_r6(root):
                         ", ".join("V%d" % n for n in stale))
 
     check_boolean("R6", not reasons,
-                   "MUST-VERIFY V20+ ids in reader.lua/settings.lua/db.lua exactly match docs/VERIFY-M2.md (%d id(s))" % len(code_ids),
+                   "MUST-VERIFY V20+ ids in quranreader.lua/settings.lua/db.lua exactly match docs/VERIFY-M2.md (%d id(s))" % len(code_ids),
                    "; ".join(reasons))
 
 
@@ -439,7 +439,7 @@ EXPECTED_TYPOGRAPHY_NUMBERS = ["34", "26", "60", "2", "0.9", "0.7", "1.4", "0.1"
 
 
 def check_r7(root):
-    path = os.path.join(root, "quran.koplugin", "settings.lua")
+    path = os.path.join(root, "quran.koplugin", "quransettings.lua")
     if not os.path.isfile(path):
         record("R7", False, "settings.lua does not exist")
         return
@@ -481,7 +481,7 @@ def check_r8(root):
 # ---------------------------------------------------------------------------
 
 def check_r9(root):
-    reader_path = os.path.join(root, "quran.koplugin", "reader.lua")
+    reader_path = os.path.join(root, "quran.koplugin", "quranreader.lua")
     model_path = os.path.join(root, "tools", "paging_model.py")
     if not os.path.isfile(reader_path) or not os.path.isfile(model_path):
         record("R9", False, "reader.lua or tools/paging_model.py does not exist")
@@ -539,7 +539,7 @@ def check_r10(root):
 
 
 # ---------------------------------------------------------------------------
-# R11 -- touch-zone numbers as named constants in reader.lua, and present
+# R11 -- touch-zone numbers as named constants in quranreader.lua, and present
 # in README's checklist section.
 # ---------------------------------------------------------------------------
 
@@ -547,7 +547,7 @@ TOUCH_ZONE_NUMBERS = ["0.25", "0.75", "0.10", "0.5"]
 
 
 def check_r11(root):
-    reader_path = os.path.join(root, "quran.koplugin", "reader.lua")
+    reader_path = os.path.join(root, "quran.koplugin", "quranreader.lua")
     readme_path = os.path.join(root, "README.md")
     if not os.path.isfile(reader_path) or not os.path.isfile(readme_path):
         record("R11", False, "reader.lua or README.md does not exist")
@@ -558,18 +558,18 @@ def check_r11(root):
     reasons = []
     for number in TOUCH_ZONE_NUMBERS:
         if not re.search(r"local\s+\w+\s*=\s*%s\b" % re.escape(number), reader_src):
-            reasons.append("%s not found as a named constant (local NAME = %s) in reader.lua" % (number, number))
+            reasons.append("%s not found as a named constant (local NAME = %s) in quranreader.lua" % (number, number))
     for number in TOUCH_ZONE_NUMBERS:
         if number not in readme_src:
             reasons.append("%s not found anywhere in README.md" % number)
 
     check_boolean("R11", not reasons,
-                   "touch-zone numbers 0.25/0.75/0.10/0.5 are named constants in reader.lua and appear in README.md",
+                   "touch-zone numbers 0.25/0.75/0.10/0.5 are named constants in quranreader.lua and appear in README.md",
                    "; ".join(reasons))
 
 
 # ---------------------------------------------------------------------------
-# R12 -- no io.open/io.write/os.remove/os.rename in reader.lua or settings.lua.
+# R12 -- no io.open/io.write/os.remove/os.rename in quranreader.lua or settings.lua.
 # ---------------------------------------------------------------------------
 
 FORBIDDEN_IO_CALLS = ("io.open", "io.write", "os.remove", "os.rename")
@@ -577,7 +577,7 @@ FORBIDDEN_IO_CALLS = ("io.open", "io.write", "os.remove", "os.rename")
 
 def check_r12(root):
     reasons = []
-    for name in ("reader.lua", "settings.lua"):
+    for name in ("quranreader.lua", "quransettings.lua"):
         path = os.path.join(root, "quran.koplugin", name)
         if not os.path.isfile(path):
             reasons.append("%s does not exist" % name)
@@ -587,7 +587,7 @@ def check_r12(root):
         if found:
             reasons.append("%s contains: %s" % (name, ", ".join(found)))
     check_boolean("R12", not reasons,
-                   "neither reader.lua nor settings.lua contains io.open/io.write/os.remove/os.rename",
+                   "neither quranreader.lua nor quransettings.lua contains io.open/io.write/os.remove/os.rename",
                    "; ".join(reasons))
 
 

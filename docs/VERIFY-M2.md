@@ -4,15 +4,15 @@ Every item below is a KOReader API this machine could not confirm: there is
 no KOReader checkout and no network access here. Numbering continues from
 M0/M1's V1–V16 (see `quran.koplugin/db.lua`'s and `quran.koplugin/main.lua`'s
 own header comments for those). This document covers exactly V20–V36, the
-ids M2 introduces, in `quran.koplugin/reader.lua` (V20–V29, V33–V36) and
-`quran.koplugin/settings.lua` (V30–V32).
+ids M2 introduces, in `quran.koplugin/quranreader.lua` (V20–V29, V33–V36) and
+`quran.koplugin/quransettings.lua` (V30–V32).
 
 For each id: the claim, the KOReader source file that would confirm or
 refute it, what the code does about it (never guesses, never throws at
 module load), and the on-device symptom if the claim turns out wrong.
 `tools/check_m2.py`'s R6 parses the quick-reference table below and
 requires it to list exactly the same ids that appear as `MUST-VERIFY V<n>`
-comments (n >= 20) in `reader.lua`/`settings.lua`/`db.lua` — no undocumented
+comments (n >= 20) in `quranreader.lua`/`quransettings.lua`/`db.lua` — no undocumented
 id, no stale doc entry.
 
 ## Quick reference
@@ -44,17 +44,17 @@ every failure produces a specific, named InfoMessage. Nothing may throw at
 module load — a plugin that throws while loading is skipped by KOReader in
 silence, which is the one failure mode that gives the tester nothing to
 work with. `main.lua` keeps its existing `pcall(require, ...)` idiom for
-`reader`; `reader.lua` and `settings.lua` do the same for their own
+`reader`; `quranreader.lua` and `quransettings.lua` do the same for their own
 requires (`db`, `settings`, `ffi/blitbuffer`, `logger`,
 `ui/widget/buttondialog`, `datastorage`, `luasettings`).
 
-- **V20** — `reader.lua` constructs every `TextBoxWidget` inside a `pcall`.
+- **V20** — `quranreader.lua` constructs every `TextBoxWidget` inside a `pcall`.
   A wrong key name surfaces as a caught Lua error (treated the same as
   "line metrics unavailable" for measuring probes; a mid-layout failure
   triggers the same DB-error-style close for real page widgets). Symptom
   if wrong: reader refuses to open, or closes itself with an error
   InfoMessage, rather than a blank/garbled screen.
-- **V21** — mapped once, at `settings.lua`'s `Settings.LIMITS`/`DEFAULTS`
+- **V21** — mapped once, at `quransettings.lua`'s `Settings.LIMITS`/`DEFAULTS`
   declaration, with a comment pinning the 1.9x -> 0.9 / 1.7x -> 0.7
   mapping so a future edit doesn't "correct" it back to the raw
   multiplier. Symptom if wrong: line spacing looks roughly double what the
@@ -113,7 +113,7 @@ requires (`db`, `settings`, `ffi/blitbuffer`, `logger`,
   opening with inert min/max buttons as intended; D7 is where this would
   first be seen.
 - **V30** — every call into the returned `LuaSettings` instance is
-  wrapped (`ls_read`/`ls_save` in `settings.lua`, plus `Settings.open`'s
+  wrapped (`ls_read`/`ls_save` in `quransettings.lua`, plus `Settings.open`'s
   own `pcall`s). Symptom if wrong: persistence silently degrades to "off"
   for that session (defaults every time), never a crash (D8's fail mode).
 - **V31** — `Settings.open` treats a failed `require` or a failed/empty
@@ -127,7 +127,7 @@ requires (`db`, `settings`, `ffi/blitbuffer`, `logger`,
   failure is `Settings.getPosition` silently falling back to its own
   default `(1, 0)` — never a corrupted/garbage position. On-device check
   D9 (two surahs' positions kept independently) is what would surface this.
-- **V33** — `reader.lua` sets `self.ges_events.Tap` to a single full-screen
+- **V33** — `quranreader.lua` sets `self.ges_events.Tap` to a single full-screen
   `GestureRange`, then classifies `ges.pos` into MENU/PREV/NEXT itself
   (D2). Symptom if wrong: `onTap` is never called at all, and the reader
   is inert to touch — indistinguishable on screen from a paging bug
@@ -143,7 +143,7 @@ requires (`db`, `settings`, `ffi/blitbuffer`, `logger`,
   Symptom if wrong: ghosting/bleed-through from whatever KOReader view was
   open before the reader (the File Manager, most likely) at the screen
   edges outside the text block.
-- **V36** — not read anywhere in `reader.lua` outside this document (see
+- **V36** — not read anywhere in `quranreader.lua` outside this document (see
   R4's identifier-confinement check, which would fail if it were). Kept
   here only as a documented "checked the claim, chose not to depend on
   it" decision, per §8.3 of `.pipeline/spec.md`.

@@ -34,8 +34,8 @@ import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-READER_REL = os.path.join("quran.koplugin", "reader.lua")
-SETTINGS_REL = os.path.join("quran.koplugin", "settings.lua")
+READER_REL = os.path.join("quran.koplugin", "quranreader.lua")
+SETTINGS_REL = os.path.join("quran.koplugin", "quransettings.lua")
 META_REL = os.path.join("quran.koplugin", "_meta.lua")
 VERIFY_DOC_REL = os.path.join("docs", "VERIFY-M2.md")
 PAGING_MODEL_REL = os.path.join("tools", "paging_model.py")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pure-Python reference model of the paging arithmetic in
-`quran.koplugin/reader.lua`, run against the real `quran.db`.
+`quran.koplugin/quranreader.lua`, run against the real `quran.db`.
 
 This validates the algorithm, not the implementation. `quran.koplugin/
 reader.lua` must mirror it step for step; `tools/check_m2.py` R9 is what

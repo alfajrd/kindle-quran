@@ -104,7 +104,7 @@ results in. Exit 0 only if all three are clean.
 
 **Milestone 2 (the reader) adds `tools/check_m2.py`, which is now the whole
 gate**: `python tools/check_m2.py` runs its own R1–R12 static checks over
-`quran.koplugin/reader.lua` and `quran.koplugin/settings.lua` (file
+`quran.koplugin/quranreader.lua` and `quran.koplugin/quransettings.lua` (file
 existence, Lua parseability, the two fenced blocks, the MUST-VERIFY
 registry cross-check against `docs/VERIFY-M2.md`, typography constants,
 `_meta.lua`'s version, the STEP-marker sync with `tools/paging_model.py`,

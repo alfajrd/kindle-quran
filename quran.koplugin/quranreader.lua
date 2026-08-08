@@ -41,7 +41,7 @@ spec's own best-effort claim and flagged here.
       check D3/D5/D7 exist to catch.
   MUST-VERIFY V21: `line_height` is *extra leading in em*, default 0.3
       upstream, so SPEC-v1 §9's "1.9x line height" maps to `line_height =
-      0.9`. See `settings.lua`'s header comment for the same note.
+      0.9`. See `quransettings.lua`'s header comment for the same note.
   MUST-VERIFY V22: the per-instance line-pitch field (upstream name:
       "line_height_px", read only inside the fenced TEXTBOX INTERNALS block
       below) exists on the instance after `init()`. If it does not, the
@@ -116,7 +116,7 @@ if not ok_db then
     DB = nil
 end
 
-local ok_settings, Settings = pcall(require, "settings")
+local ok_settings, Settings = pcall(require, "quransettings")
 if not ok_settings then
     Settings = nil
 end
@@ -199,9 +199,9 @@ if Blitbuffer then
 end
 
 if logger and RULE_COLOUR_SOURCE and RULE_COLOUR_SOURCE ~= "COLOR_GRAY" then
-    pcall(function() logger.warn("quran.koplugin/reader.lua: rule colour fallback used: " .. RULE_COLOUR_SOURCE) end)
+    pcall(function() logger.warn("quran.koplugin/quranquranreader.lua: rule colour fallback used: " .. RULE_COLOUR_SOURCE) end)
 elseif logger and not RULE_COLOUR then
-    pcall(function() logger.warn("quran.koplugin/reader.lua: no rule colour resolved at all; rules will not draw") end)
+    pcall(function() logger.warn("quran.koplugin/quranquranreader.lua: no rule colour resolved at all; rules will not draw") end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -706,7 +706,7 @@ function Reader:openSettings()
     end
     if not Settings then
         UIManager:show(InfoMessage:new{
-            text = "Qur'an: settings.lua is unavailable; cannot open the settings dialog.",
+            text = "Qur'an: quransettings.lua is unavailable; cannot open the settings dialog.",
             show_icon = false,
             dismissable = true,
         })
@@ -897,7 +897,7 @@ function Reader:init()
         return
     end
     if not Settings then
-        self:failInit("Qur'an reader: settings.lua failed to load (see crash.log)")
+        self:failInit("Qur'an reader: quransettings.lua failed to load (see crash.log)")
         return
     end
     if not self.conn then

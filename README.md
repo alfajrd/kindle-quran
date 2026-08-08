@@ -47,10 +47,10 @@ independently verified against Tanzil, see `docs/BUILD.md`.
    opens but every ayah lookup fails loudly (see "Pack missing on device"
    below) — this is deliberate (D5: never fall back to the pin), not a bug.
 3c. **Milestone 2 adds two more Lua files inside the same folder:**
-   `quran.koplugin/reader.lua` and `quran.koplugin/settings.lua`. Copying
+   `quran.koplugin/quranreader.lua` and `quran.koplugin/quransettings.lua`. Copying
    `quran.koplugin/` wholesale (step 3) already carries them — this is
    just confirming: check that
-   `/mnt/us/koreader/plugins/quran.koplugin/reader.lua` and
+   `/mnt/us/koreader/plugins/quran.koplugin/quranreader.lua` and
    `.../settings.lua` both exist after the copy. Without either one, the
    plugin still loads (M0/M1's two items still work) but the five
    "Qur'an — read ..." reader items report the failure instead of opening
@@ -137,7 +137,7 @@ feature; see `.pipeline/spec.md` §5.1.
 `NEXT` is on the **right** — LTR-style, even though the text is RTL — to
 match KOReader's own reader on this device. D5 below asks you to judge
 whether that still feels right in Arabic; it is one constant
-(`FORWARD_ON_RIGHT` in `reader.lua`) to flip if not.
+(`FORWARD_ON_RIGHT` in `quranreader.lua`) to flip if not.
 
 Ten minutes on a Paperwhite 11, in this order. Each item is pass/fail with
 no judgement call except D5's direction question, which is marked as such.
@@ -154,7 +154,7 @@ FAIL columns below point back to.
 | id | Do this | PASS | FAIL means |
 |---|---|---|---|
 | D1 | Open KOReader's main menu → More tools. | All seven `Qur'an —` items are present. | Plugin threw at load; read `/mnt/us/koreader/crash.log`. |
-| D2 | Tap "read An-Nas (114)". | The whole surah renders, Arabic shaped and joined, with an ayah marker (`۝` + Arabic-Indic digits) after each ayah. | If markers show as boxes/nothing: set `AYAH_MARKER_STYLE = "ornate"` in `reader.lua` and retest. Never a Latin numeral. |
+| D2 | Tap "read An-Nas (114)". | The whole surah renders, Arabic shaped and joined, with an ayah marker (`۝` + Arabic-Indic digits) after each ayah. | If markers show as boxes/nothing: set `AYAH_MARKER_STYLE = "ornate"` in `quranreader.lua` and retest. Never a Latin numeral. |
 | D3 | Look at the rules on that page. | One rule per line of text, none under blank space, text sits **on** the rules and no rule cuts through the glyphs, and the spacing of the last rule equals the spacing of the first (register holds). | Rules through the text or drifting: adjust `RULE_Y_OFFSET_PX` only. Drift specifically means the line pitch is not what V22 claims; stop and re-read the source. |
 | D4 | Look at the rules against the text. | Grey, clearly lighter than the glyphs. | Black rules ⇒ the colour fallback chain fell through; V28 is wrong. |
 | D5 | Open "read Al-Baqara (2)". Tap right five times. | Five distinct pages, each turn feels instant (well under half a second), no text repeated or skipped at any seam. **Also judge:** does right-for-forward feel right in Arabic? If not, flip `FORWARD_ON_RIGHT`. | Repeated/skipped lines at a seam ⇒ V25 (`top_line_num` off-by-one). |

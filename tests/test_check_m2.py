@@ -18,7 +18,7 @@ KNOWN LIMITATION -- READ BEFORE TRUSTING THIS SUITE
 well-formed, the two fences hold, the MUST-VERIFY registry matches the
 code, and the STEP markers stay in sync. They prove NOTHING about whether
 `TextBoxWidget`, `LuaSettings`, `ButtonDialog`, or any other KOReader API
-actually behaves as `reader.lua`/`settings.lua` assume -- that is what
+actually behaves as `quranreader.lua`/`quransettings.lua` assume -- that is what
 `docs/VERIFY-M2.md`'s registry exists to track, and only a real on-device
 pass (README.md's "Milestone 2 — on-device checklist", D1-D12) can confirm
 or refute it. A green `check_m2.py` (and a green run of this suite) is not
@@ -44,8 +44,8 @@ import tempfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK_M2_SCRIPT = os.path.join(REPO_ROOT, "tools", "check_m2.py")
 
-READER_REL = os.path.join("quran.koplugin", "reader.lua")
-SETTINGS_REL = os.path.join("quran.koplugin", "settings.lua")
+READER_REL = os.path.join("quran.koplugin", "quranreader.lua")
+SETTINGS_REL = os.path.join("quran.koplugin", "quransettings.lua")
 META_REL = os.path.join("quran.koplugin", "_meta.lua")
 VERIFY_DOC_REL = os.path.join("docs", "VERIFY-M2.md")
 PAGING_MODEL_REL = os.path.join("tools", "paging_model.py")

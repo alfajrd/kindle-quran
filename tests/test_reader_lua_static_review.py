@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Static-source review assertions over the real, unmodified
-`quran.koplugin/reader.lua` / `settings.lua` -- things `check_m2.py` does
+`quran.koplugin/quranreader.lua` / `quransettings.lua` -- things `check_m2.py` does
 not check but the M2 test brief asked to verify.
 
 These are textual/structural checks (this machine has no Lua interpreter),
@@ -17,8 +17,8 @@ import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-READER_PATH = os.path.join(REPO_ROOT, "quran.koplugin", "reader.lua")
-SETTINGS_PATH = os.path.join(REPO_ROOT, "quran.koplugin", "settings.lua")
+READER_PATH = os.path.join(REPO_ROOT, "quran.koplugin", "quranreader.lua")
+SETTINGS_PATH = os.path.join(REPO_ROOT, "quran.koplugin", "quransettings.lua")
 
 
 def _read(path):
@@ -152,7 +152,7 @@ def test_touch_zones_are_a_complete_non_overlapping_half_open_partition():
     # D2's own claim: MENU / PREV / NEXT partition the screen exactly, with
     # half-open intervals so a boundary tap resolves to exactly one zone
     # (edge case 23). Proven here purely arithmetically over the actual
-    # fraction constants declared in reader.lua (0.25/0.75/0.10/0.5), by
+    # fraction constants declared in quranreader.lua (0.25/0.75/0.10/0.5), by
     # exhaustively classifying a fine grid of (x_frac, y_frac) points the
     # same way `Reader:onTap` does and checking each point lands in
     # exactly one of the three zones.

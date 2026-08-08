@@ -200,6 +200,11 @@ quran.koplugin/
   reference.lua       -- "2:255" parser
   display.lua         -- Arabic / English / both
   settings.lua        -- typography
+
+(Shipped as `quranreader.lua` / `quransettings.lua`: KOReader's own
+repo root has a `reader.lua` — the application launcher — and a plugin
+doing `require("reader")` can load that instead. Namespacing removes the
+dependency on package.path ordering.)
   db.lua              -- SQLite layer
   data/
     quran.db
