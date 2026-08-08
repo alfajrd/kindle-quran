@@ -53,9 +53,9 @@ Settings.SETTINGS_VERSION = 1
 -- "1.9 x line height" therefore maps to `line_height = 0.9`, and the 1.7x
 -- floor to `0.7`. Do not "correct" this back to 1.9 -- that would be the
 -- raw multiplier, not the extra-leading value TextBoxWidget actually wants.
-Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 0.9, rules_enabled = true }
+Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5, rules_enabled = true }
 Settings.LIMITS   = { arabic_font_size   = { min = 26, max = 60,  step = 2   },
-                      arabic_line_height = { min = 0.7, max = 1.4, step = 0.1 } }
+                      arabic_line_height = { min = 0.7, max = 2.0, step = 0.1 } }
 
 local function clamp(value, lim)
     if value < lim.min then

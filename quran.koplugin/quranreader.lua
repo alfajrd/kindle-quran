@@ -140,8 +140,15 @@ end
 local SIDE_MARGIN_PX = 40      -- SPEC-v1 §9 default; floor 24
 local TOP_MARGIN_PX = 30
 local BOTTOM_MARGIN_PX = 30
-local RULE_THICKNESS_PX = 1
-local RULE_Y_OFFSET_PX = 0     -- see §6.5; the one number the device tester tunes
+local RULE_THICKNESS_PX = 2
+-- 0 is not an unset default -- it is the correct value. KOReader splits a
+-- line's extra leading evenly above and below the glyphs
+-- (line_glyph_baseline = face_ascender + line_heights_diff/2), so the
+-- line-box bottom, where the rule is drawn, is already the midpoint of the
+-- gap between two lines. Clipping is cured by widening that gap
+-- (arabic_line_height), not by moving the rule. This stays the tuning knob
+-- for a device that disagrees.
+local RULE_Y_OFFSET_PX = 0
 
 local LINE_COUNT_CACHE_MAX = 256
 
@@ -169,7 +176,7 @@ local FORWARD_ON_RIGHT = true
 -- chain; falling back to black is ugly but visible and honest, silently
 -- drawing nothing is not acceptable.
 -- ---------------------------------------------------------------------------
-local RULE_COLOUR_CANDIDATES = { "COLOR_GRAY", "COLOR_LIGHT_GRAY", "COLOR_DARK_GRAY" }
+local RULE_COLOUR_CANDIDATES = { "COLOR_DARK_GRAY", "COLOR_GRAY", "COLOR_LIGHT_GRAY" }
 local RULE_COLOUR = nil
 local RULE_COLOUR_SOURCE = nil
 

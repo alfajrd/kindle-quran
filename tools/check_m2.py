@@ -435,7 +435,7 @@ def check_r6(root):
 # R7 -- settings.lua declares exactly §6.6's typography numbers.
 # ---------------------------------------------------------------------------
 
-EXPECTED_TYPOGRAPHY_NUMBERS = ["34", "26", "60", "2", "0.9", "0.7", "1.4", "0.1"]
+EXPECTED_TYPOGRAPHY_NUMBERS = ["34", "26", "60", "2", "1.5", "0.7", "2.0", "0.1"]
 
 
 def check_r7(root):
