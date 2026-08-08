@@ -199,9 +199,9 @@ if Blitbuffer then
 end
 
 if logger and RULE_COLOUR_SOURCE and RULE_COLOUR_SOURCE ~= "COLOR_GRAY" then
-    pcall(function() logger.warn("quran.koplugin/quranquranreader.lua: rule colour fallback used: " .. RULE_COLOUR_SOURCE) end)
+    pcall(function() logger.warn("quran.koplugin/quranreader.lua: rule colour fallback used: " .. RULE_COLOUR_SOURCE) end)
 elseif logger and not RULE_COLOUR then
-    pcall(function() logger.warn("quran.koplugin/quranquranreader.lua: no rule colour resolved at all; rules will not draw") end)
+    pcall(function() logger.warn("quran.koplugin/quranreader.lua: no rule colour resolved at all; rules will not draw") end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -329,9 +329,23 @@ local RuledPage = WidgetContainer:extend{
     width = 0,
 }
 
--- Draws the rules first, then the child -- so glyph descenders and harakat
--- sit *over* the rule rather than being clipped by it.
+-- Draws the child FIRST, then the rules over it.
+--
+-- The reverse -- rules first, so harakat sit over them -- was tried and does
+-- not work: TextBoxWidget renders into its own blitbuffer, fills it with an
+-- opaque background (`self._bb:fill(self.bgcolor)`, defaulting to
+-- COLOR_WHITE) and blits the whole rectangle in its paintTo. That blit is an
+-- opaque copy, so every rule drawn beforehand was painted over. On the device
+-- the result was no rules at all, with text and paging otherwise correct.
+--
+-- The cost of painting after is that a rule crosses any glyph reaching its y,
+-- so a low kasra can be struck through where the two collide. Ruled paper
+-- behaves the same way. RULE_Y_OFFSET_PX nudges the rule off the collision;
+-- it is a judgement only the device can settle.
 function RuledPage:paintTo(bb, x, y)
+    if self[1] then
+        self[1]:paintTo(bb, x, y)
+    end
     if self.rules_enabled and self.px_per_line and RULE_COLOUR then
         for i = 1, self.n_lines do
             pcall(function()
@@ -344,9 +358,6 @@ function RuledPage:paintTo(bb, x, y)
                 )
             end)
         end
-    end
-    if self[1] then
-        self[1]:paintTo(bb, x, y)
     end
 end
 
