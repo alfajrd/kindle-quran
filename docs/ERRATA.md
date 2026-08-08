@@ -106,9 +106,19 @@ actually governs.
 
 ### Reporting upstream
 
-Tanzil maintains an errata process at <http://tanzil.net/updates/>. A report
-should state: the two references, the exact codepoint sequences above, the
-comparison table showing their own simple editions disagree, and that the
-`quran-simple-enhanced` and `quran-uthmani-quran-academy` editions are
-affected identically — which points at a shared mark-application step rather
-than at one file.
+**Status: not yet sent.** A ready-to-post report is written out in
+`docs/tanzil-report.md`.
+
+Route: the Tanzil text mailing list, <https://groups.google.com/g/tanzil-text>.
+
+Note the earlier draft of this section pointed at <http://tanzil.net/updates/>,
+which was wrong. That page lists corrections Tanzil has *made*; it offers no
+way to submit one. There is no contact form or email address on tanzil.net at
+all — `/updates/` and `/docs/` were both checked, and `/contact` and `/wiki/`
+do not exist. The mailing list is the only channel the project publishes, and
+it is specifically about the text.
+
+Worth sending rather than merely noting: if Tanzil corrects this upstream, the
+`before` hash in `data/errata.tsv` stops matching, our build fails loudly, and
+we delete the erratum. Everyone else using the Uthmani edition benefits at the
+same time.
