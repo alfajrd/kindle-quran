@@ -17,8 +17,11 @@ these to be confirmed on a real Kindle, not on this machine.
   V11 (binding module path): implemented as `require("lua-ljsqlite3/init")`,
       exactly as spec.md states. UNVERIFIED -- could not grep a KOReader
       tree for `ljsqlite3` on this machine.
-  V12 (binding API surface): implemented as `SQ3.open(path)` -> conn,
-      `conn:exec(sql)` for the read-only pragma, and `conn:rowexec(sql,
+  V12 (binding API surface): CORRECTED ON-DEVICE. `conn:rowexec` takes a
+      single argument and does not bind; parameterised queries go through
+      rowexecBound (prepare/bind/step/close) below. Implemented as
+      `SQ3.open(path)` -> conn, `conn:exec(sql)` for the read-only pragma,
+      and formerly `conn:rowexec(sql,
       ...params)` -> the first row's column(s) as return value(s) for the
       two single-row queries this module needs (`getAyah`, `getMeta`,
       `counts`). UNVERIFIED against `koreader-base/thirdparty/
@@ -71,13 +74,43 @@ function DB.open(path)
     return conn, nil
 end
 
+-- Runs a parameterised query and returns its first column, or nil.
+--
+-- MUST-VERIFY V12, corrected on-device: `conn:rowexec(sql, ...)` does NOT
+-- bind. Its real signature in koreader-base's lua-ljsqlite3 is
+-- `conn_mt:rowexec(command)` -- a single argument -- so any extra values are
+-- silently discarded and the `?` placeholders stay unbound. SQLite then
+-- compares against NULL and matches nothing, which is why the pack self-test
+-- reported correct COUNT(*) totals (no placeholders) beside "no row" for
+-- every keyed lookup.
+--
+-- The supported binding path is prepare -> bind -> step -> close. `step()`
+-- returns a table of column values, or nil when there is no row. The
+-- statement is closed on every path, including error, so a failed query
+-- cannot leak a prepared statement.
+local function rowexecBound(conn, sql, ...)
+    local stmt = conn:prepare(sql)
+    local ok, res = pcall(function(...)
+        stmt:bind(...)
+        return stmt:step()
+    end, ...)
+    pcall(function() stmt:close() end)
+    if not ok then
+        error(res, 0)
+    end
+    if res == nil then
+        return nil
+    end
+    return res[1]
+end
+
 -- Returns (text, nil) or (nil, err_string). err_string when the row is absent.
 function DB.getAyah(conn, surah, ayah)
     if not conn then
         return nil, "DB.getAyah: no connection"
     end
     local ok, text = pcall(function()
-        return conn:rowexec("SELECT text FROM ayah WHERE surah = ? AND ayah = ?;", surah, ayah)
+        return rowexecBound(conn, "SELECT text FROM ayah WHERE surah = ? AND ayah = ?;", surah, ayah)
     end)
     if not ok then
         return nil, "DB.getAyah(" .. tostring(surah) .. ":" .. tostring(ayah) .. "): " .. tostring(text)
@@ -94,7 +127,7 @@ function DB.getMeta(conn, key)
         return nil
     end
     local ok, value = pcall(function()
-        return conn:rowexec("SELECT value FROM meta WHERE key = ?;", key)
+        return rowexecBound(conn, "SELECT value FROM meta WHERE key = ?;", key)
     end)
     if not ok then
         return nil
@@ -122,7 +155,7 @@ function DB.getSurahAyahCount(conn, surah)
         return nil, "DB.getSurahAyahCount: no connection"
     end
     local ok, count = pcall(function()
-        return conn:rowexec("SELECT ayah_count FROM surah WHERE id = ?;", surah)
+        return rowexecBound(conn, "SELECT ayah_count FROM surah WHERE id = ?;", surah)
     end)
     if not ok then
         return nil, "DB.getSurahAyahCount(" .. tostring(surah) .. "): " .. tostring(count)
@@ -158,7 +191,7 @@ function DB.getSurahName(conn, surah, which)
         sql = "SELECT name_tr FROM surah WHERE id = ?;"
     end
     local ok, value = pcall(function()
-        return conn:rowexec(sql, surah)
+        return rowexecBound(conn, sql, surah)
     end)
     if not ok then
         return nil, "DB.getSurahName(" .. tostring(surah) .. ", " .. tostring(which) .. "): " .. tostring(value)
