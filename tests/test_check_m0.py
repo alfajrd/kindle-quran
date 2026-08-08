@@ -35,7 +35,7 @@ BUT: if `data/2_255.txt`, the `main.lua` literal, AND `data/2_255.sha256`
 are all regenerated TOGETHER from the same corrupted text (e.g. someone runs
 the whole verse through `unicodedata.normalize("NFC", ...)`, or retypes one
 letter, and then re-copies that same wrong text into all three places and
-re-hashes it) -- `check_m0.py` passes all 31 checks. A2/A3 only prove
+re-hashes it) -- `check_m0.py` passes all 32 checks. A2/A3 only prove
 internal self-consistency between the three copies IN THIS REPO; they do not
 and cannot prove the text still matches Tanzil. This is not a defect in
 `check_m0.py`, and it is not something this test suite (or any purely
@@ -174,9 +174,9 @@ def test_clean_tree_passes():
     try:
         code, statuses, stdout = run_checker(dst)
         assert code == 0, "expected exit 0 on an unmodified copy, got %d\n%s" % (code, stdout)
-        assert len(statuses) == 31, "expected 31 checks to be reported, got %d\n%s" % (len(statuses), stdout)
+        assert len(statuses) == 32, "expected 32 checks to be reported, got %d\n%s" % (len(statuses), stdout)
         assert all(statuses.values()), "expected every check to PASS on an unmodified copy\n%s" % stdout
-        assert "RESULT: PASS (31 checks)" in stdout, stdout
+        assert "RESULT: PASS (32 checks)" in stdout, stdout
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

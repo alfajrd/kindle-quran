@@ -349,6 +349,80 @@ def check_l3_l4(root, meta_tree, main_tree):
     )
 
 
+def _unterminated_short_strings(src):
+    """(line, quote) for Lua short strings that run into end-of-line.
+
+    Lua short strings (' or ") may not contain a raw newline -- only [[ ]]
+    long strings may. Long strings and comments are skipped so their contents
+    are not scanned.
+    """
+    DQ, SQ, BS, NL = chr(34), chr(39), chr(92), chr(10)
+    out = []
+    i, n, line = 0, len(src), 1
+    long_open = re.compile(r"(--)?\[(=*)\[")
+    while i < n:
+        c = src[i]
+        if c == NL:
+            line += 1
+            i += 1
+            continue
+        m = long_open.match(src, i)
+        if m:
+            close = "]" + m.group(2) + "]"
+            j = src.find(close, m.end())
+            end = n if j == -1 else j + len(close)
+            line += src.count(NL, i, end)
+            i = end
+            continue
+        if src.startswith("--", i):
+            j = src.find(NL, i)
+            i = n if j == -1 else j
+            continue
+        if c == DQ or c == SQ:
+            j, closed = i + 1, False
+            while j < n:
+                if src[j] == BS:
+                    j += 2
+                    continue
+                if src[j] == c:
+                    closed = True
+                    break
+                if src[j] == NL:
+                    break
+                j += 1
+            if not closed:
+                out.append((line, c))
+            i = j + 1
+            continue
+        i += 1
+    return out
+
+
+def check_l7(root):
+    """No Lua short string spans a line.
+
+    luaparser accepts this; LuaJIT does not, and KOReader skips a plugin that
+    fails to load without a word. That combination cost a device trip once --
+    every structural check passed while the plugin was dead. This is the one
+    luaparser/LuaJIT divergence known to have bitten this project.
+    """
+    offenders = []
+    koplugin = os.path.join(root, "quran.koplugin")
+    if os.path.isdir(koplugin):
+        for name in sorted(os.listdir(koplugin)):
+            if not name.endswith(".lua"):
+                continue
+            path = os.path.join(koplugin, name)
+            src = read_bytes(path).decode("utf-8", errors="strict")
+            for line_no, quote in _unterminated_short_strings(src):
+                offenders.append("%s:%d (%s)" % (name, line_no, quote))
+    check_boolean(
+        "L7",
+        not offenders,
+        "no Lua short string spans a line (luaparser accepts this; LuaJIT does not)",
+        "unterminated short string at: " + ", ".join(offenders),
+    )
+
 def check_l5(root):
     main_path = os.path.join(root, "quran.koplugin", "main.lua")
     if not os.path.isfile(main_path):
@@ -740,6 +814,7 @@ def main():
     check_l5(root)
     check_l6(main_tree)
 
+    check_l7(root)
     check_m1(root)
     check_m2(root)
 

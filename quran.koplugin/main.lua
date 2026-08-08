@@ -295,9 +295,7 @@ function Quran:showPackSelfTest()
 
     if not DB then
         UIManager:show(InfoMessage:new{
-            text = "Qur'an: db.lua failed to load.
-
-See /mnt/us/koreader/crash.log",
+            text = "Qur'an: db.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
             show_icon = false,
             dismissable = true,
         })
