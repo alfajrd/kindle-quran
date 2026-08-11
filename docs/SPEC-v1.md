@@ -1,9 +1,10 @@
 # Qur'an — v1 Specification
 
 **Target:** Kindle Paperwhite 11th gen (jailbroken)
-**Runtime:** KOReader plugin, launched from KUAL, distributed via KindleForge
-**Content:** Uthmani Arabic + English translation
-**Status:** draft for review · 6 August 2026
+**Runtime:** KOReader plugin, launched from KUAL
+**Content:** Uthmani Arabic + a side-loaded English translation
+**Distribution:** personal use — see §1
+**Status:** draft for review · 6 August 2026, amended 11 August 2026
 
 ---
 
@@ -16,9 +17,31 @@
 | Languages | Arabic (Uthmani) + English translation |
 | Device | Kindle Paperwhite 11 — **and only that**, for v1 |
 | Runtime | KOReader plugin (`.koplugin`), Lua |
+| Distribution | **Personal use.** The repo is public; the build on the owner's device is not a release. |
+| Interleaved layout | **Side-by-side ayah rows** — translation left, Arabic right, a rule between ayat |
 
 Narrowing to one device and one scripture removes most of the risk in the
 previous draft. What remains is concentrated in one place: §3.
+
+### On "personal use" — decided 11 August 2026
+
+It settles what may go **on the device**, and nothing about what may go **in
+this repository**. The two are separate questions, and conflating them is how a
+public repo acquires a copyright problem.
+
+- **Device:** a translation the owner holds a copy of may be built into a pack
+  and side-loaded. That is format-shifting a book they bought.
+- **Repository:** ships **no** translation, now or under this decision.
+  `.gitignore` blocks `translations/*.db` and `packs/personal/`; overriding it
+  needs a cleared licence and a `THIRD-PARTY.md` entry.
+
+This unblocks §3's translation question **for the engine work only**. If a
+KindleForge release is ever wanted, the licensing survey in `docs/BACKLOG.md`
+§B1 applies again, unchanged — which is why that survey stays in the tree
+rather than being deleted as resolved.
+
+Note the consequence for §4 and §10: the reader now renders two scripts at
+once, so every performance target is measured with a translation pack loaded.
 
 ---
 
@@ -90,7 +113,8 @@ handling to fall back on. Tap zones must be defined explicitly, not inherited.
 1. **Read** — continuous, by surah, with position memory
 2. **Navigate** — by surah (1–114) and by **juz** (1–30)
 3. **Jump to reference** — type `2:255`, land there
-4. **Display modes** — Arabic only · English only · both interleaved
+4. **Display modes** — Arabic only · English only · **both interleaved** (§9.1),
+   chosen at startup and changeable later, never re-asked on every launch
 5. **Typography** — independent font size for Arabic and English; line spacing; margins
 6. **Bookmarks** — a saved reference with an optional note
 7. **About** — translation, source, licence, attribution
@@ -254,6 +278,81 @@ ruled out for a KindleForge release — see `THIRD-PARTY.md`.
 after comparing 26/30/34/38/44. Harakat clear the line above at that size.
 This is a Paperwhite 11 number; a 167 ppi device will want its own.
 
+### 9.1 Interleaved layout — side-by-side ayah rows (Milestone 3)
+
+Decided 11 August 2026 from a reference screenshot, and confirmed side-by-side
+over the stacked alternative.
+
+**The ayah is the layout unit.** One row per ayah:
+
+```
++----------------------------+----------------------------+
+| 39. Comprising many from   |  <Arabic, RTL>        (٣٩) |
+|     the first generations, |                            |
++============================+============================+
+| 40. And many from the      |  <Arabic, RTL>        (٤٠) |
+|     later ones.            |                            |
++============================+============================+
+```
+
+- **Left column:** translation, LTR, English face and leading.
+- **Right column:** Arabic, RTL, Arabic face and leading, ayah marker trailing.
+- **Row height:** the taller of the two cells. Neither column is padded to a
+  fixed height.
+- **Rule:** one horizontal rule per row, in the **gutter below** it.
+
+#### Why this supersedes the §9 ruled lines, and does not extend them
+
+The M2 rules are drawn every `line_height_px` and can land on any glyph — which
+is exactly what has been clipping harakat, and why `RULE_GAP_FRACTION` exists as
+a device-tuned knob. **A row rule has no such problem**: it sits in a gutter
+whose height the reader computes, between two rows it also computed. No glyph
+occupies that band, so none can be cut. The knob is not needed here.
+
+Per-line rules therefore remain for **Arabic-only mode**, where lines are the
+unit and there is nothing else to rule against. Interleaved mode does not use
+them. Two modes, two rule models — do not try to unify them.
+
+#### Geometry on the PW11
+
+1236 px wide. After 40 px side margins and a 32 px gutter, each column is
+**562 px**. That is a narrow measure for Arabic: 2:255 wraps to roughly 13 lines
+at 562 px against 7 at full width. Accepted deliberately in exchange for the
+reference layout's density.
+
+Two consequences the implementation must handle rather than assume away:
+
+- **The Arabic default of 34 px was chosen at full width.** Re-judge it on
+  device in a 562 px column; it may want to come down, and §9's independent
+  Arabic/English sizing is what makes that possible without shrinking English.
+- **A single ayah can exceed a page.** 2:282 will, at any supported size. See
+  the overflow rule below.
+
+#### Pagination
+
+Fill each page with **as many complete rows as fit**. Never cut a row to squeeze
+it in — if the next does not fit whole, it starts the next page.
+
+**Exception:** a row taller than a page splits across as many pages as it needs.
+Measure this against the **rendered** height at the reader's current font size,
+not a character count — Arabic wraps by shaped width, so a count predicts
+nothing. Verify against **2:282 at the largest supported size**, where it is
+worst.
+
+#### Direction
+
+The two columns have opposite paragraph direction. Set each cell's direction
+explicitly rather than relying on `auto_para_direction` to infer it — an ayah
+whose translation opens with a digit ("39.") is exactly the case where
+detection is least reliable.
+
+#### Position memory
+
+A position is an **ayah reference**, not a byte offset, so it survives a mode
+switch: stopping at 2:255 in Arabic-only must resume at 2:255 interleaved. The
+existing `positions = { ["2"] = { ayah = N, line = M } }` already carries the
+ayah; `line` becomes meaningful only within a split row.
+
 ### Ruled lines (Milestone 2)
 
 Long RTL lines are hard for the eye to track back along — ruled mushafs and
@@ -302,9 +401,15 @@ loading it whole — don't, because the Bible pack later will not be.
 | **0** | Hello-world `.koplugin` on the PW11 rendering one hard-coded Uthmani ayah with correct shaping, joining and harakat | **The premise.** |
 | 1 | Pipeline → validated `quran.db` passing every §7 assertion | Data integrity |
 | 2 | Reader: continuous scroll, position memory, typography, **ruled lines** | The core loop |
-| 3 | Navigator (surah + juz) and reference parser | Why it beats an EPUB |
-| 4 | Display modes, Bismillah/sajdah rules, bookmarks, About | Feature-complete |
-| 5 | KindleForge packaging, README, screenshots | Ship |
+| **3** | **Translation pack format + interleaved ayah-row layout (§9.1), row pagination, mode switch** | **The reason to build this rather than read an EPUB** |
+| 4 | Navigator (surah + juz) and reference parser | Fast movement |
+| 5 | Bismillah/sajdah rules, bookmarks, About | Feature-complete |
+| 6 | Packaging, README, screenshots | Done |
+
+Milestone 3 was promoted from `docs/BACKLOG.md` §B1 on 11 August 2026, when the
+personal-use decision (§1) cleared its licensing blocker. It moved ahead of the
+navigator because it changes the pagination model — building navigation against
+a model that is about to be replaced would mean building it twice.
 
 **Milestone 0 is a gate.** Build nothing else until Arabic shapes correctly on
 your actual device. If it fails, the architecture changes and everything built
@@ -331,5 +436,6 @@ Search (verify FTS5 in KOReader's SQLite build) · Bible pack on the same engine
 bookmarks export · word-by-word.
 
 Items with enough shape to need designing before they are picked up live in
-`docs/BACKLOG.md` — currently **B1**, the startup choice between Arabic-only
-and one-ayah-per-page-with-translation.
+`docs/BACKLOG.md`. **B1 is no longer among them** — it was promoted into v1 as
+Milestone 3 on 11 August 2026. Its licensing survey stays in that file, because
+it becomes live again the moment a public release is considered.

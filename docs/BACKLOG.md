@@ -10,7 +10,23 @@ Nothing here is scheduled. An item earns a milestone when its blockers clear.
 
 ## B1 — Startup mode: Arabic only, or Arabic with translation
 
-**Status:** blocked on translation licensing
+> **PROMOTED TO v1 — Milestone 3, on 11 August 2026.**
+>
+> The blocker below was translation *licensing*. The personal-use decision
+> (`docs/SPEC-v1.md` §1) resolved it for the owner's device: a translation they
+> hold a copy of may be side-loaded, while the repository still ships none.
+> That is Option 3 below, which was already the recommendation.
+>
+> The layout was settled at the same time — **side-by-side ayah rows**, from a
+> reference screenshot. Spec: §9.1. It replaces "one ayah per page", which the
+> pagination rule below had already superseded.
+>
+> **This section is not obsolete.** The licensing survey becomes live again the
+> instant a public KindleForge release is considered, and nothing in it has
+> changed. Keep it. The design notes below remain the working notes for M3 —
+> in particular the surah-intro schema, which is not yet built.
+
+**Status:** ~~blocked on translation licensing~~ → **in v1 as Milestone 3**
 **Size:** large — changes pagination, not just presentation
 
 ### What
