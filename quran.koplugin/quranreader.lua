@@ -141,14 +141,25 @@ local SIDE_MARGIN_PX = 40      -- SPEC-v1 §9 default; floor 24
 local TOP_MARGIN_PX = 30
 local BOTTOM_MARGIN_PX = 30
 local RULE_THICKNESS_PX = 2
--- 0 is not an unset default -- it is the correct value. KOReader splits a
--- line's extra leading evenly above and below the glyphs
--- (line_glyph_baseline = face_ascender + line_heights_diff/2), so the
--- line-box bottom, where the rule is drawn, is already the midpoint of the
--- gap between two lines. Clipping is cured by widening that gap
--- (arabic_line_height), not by moving the rule. This stays the tuning knob
--- for a device that disagrees.
-local RULE_Y_OFFSET_PX = 0
+
+-- Where the rule sits within the gap below a line of text, as a fraction of
+-- that gap. 0.0 is flush with the line box's bottom edge; 1.0 would put it
+-- against the next line's glyphs.
+--
+-- The previous revision pinned the offset at 0 on the reasoning that
+-- KOReader splits a line's extra leading evenly above and below the glyphs,
+-- which would make the line-box bottom already the midpoint of the gap.
+-- Device evidence contradicts that. After raising arabic_line_height to 1.5
+-- the bands between rules grew as expected, but the new space appeared
+-- almost entirely ABOVE each line: the glyphs still sit low in their box and
+-- the rules still cut descenders and low harakat. Widening the gap could
+-- therefore never cure the clipping, because every extra pixel of leading
+-- was going where the rule was not.
+--
+-- So place the rule proportionally inside the gap rather than flush with a
+-- box edge, and derive it from the measured pitch rather than a pinned
+-- constant, so it tracks whatever font size and leading the reader chooses.
+local RULE_GAP_FRACTION = 0.5
 
 local LINE_COUNT_CACHE_MAX = 256
 
@@ -334,6 +345,7 @@ local RuledPage = WidgetContainer:extend{
     n_lines = 0,
     rules_enabled = true,
     width = 0,
+    y_offset = 0,   -- computed by Reader:computeGeometry from the measured gap
 }
 
 -- Draws the child FIRST, then the rules over it.
@@ -347,8 +359,9 @@ local RuledPage = WidgetContainer:extend{
 --
 -- The cost of painting after is that a rule crosses any glyph reaching its y,
 -- so a low kasra can be struck through where the two collide. Ruled paper
--- behaves the same way. RULE_Y_OFFSET_PX nudges the rule off the collision;
--- it is a judgement only the device can settle.
+-- behaves the same way. `y_offset` (RULE_GAP_FRACTION of the measured gap)
+-- moves the rule off the collision; it is a judgement only the device can
+-- settle, and the fraction is the knob to turn.
 function RuledPage:paintTo(bb, x, y)
     if self[1] then
         self[1]:paintTo(bb, x, y)
@@ -358,7 +371,7 @@ function RuledPage:paintTo(bb, x, y)
             pcall(function()
                 bb:paintRect(
                     x,
-                    y + i * self.px_per_line - RULE_THICKNESS_PX + RULE_Y_OFFSET_PX,
+                    y + i * self.px_per_line - RULE_THICKNESS_PX + (self.y_offset or 0),
                     self.width,
                     RULE_THICKNESS_PX,
                     RULE_COLOUR
@@ -415,6 +428,36 @@ function Reader:computeGeometry()
         return false
     end
     self.px_per_line = pitch
+
+    -- The gap a rule sits in is the pitch minus the height the face occupies
+    -- with no extra leading, so measure that face height rather than assume
+    -- it. Same public API as the pitch probe above: an identical box built
+    -- with line_height = 0. If the measurement fails the offset falls back to
+    -- 0, which is the old flush-with-the-box-bottom behaviour -- degraded,
+    -- but never worse than before, and never a crash.
+    local face_h = nil
+    local ok_tight, tight = pcall(function()
+        return TextBoxWidget:new{
+            text = "A",
+            face = Font:getFace(ARABIC_FONT, self.arabic_font_size),
+            width = self.text_width,
+            line_height = 0,
+            alignment = "left",
+            auto_para_direction = true,
+        }
+    end)
+    if ok_tight and tight then
+        face_h = TextMetrics.lineHeightPx(tight)
+        pcall(function() tight:free() end)
+    end
+    local gap = 0
+    if face_h and face_h > 0 and pitch > face_h then
+        gap = pitch - face_h
+    end
+    -- Never let the rule reach the next line's box: cap at gap - thickness.
+    local max_offset = math.max(0, gap - RULE_THICKNESS_PX)
+    self.rule_y_offset = math.min(math.floor(gap * RULE_GAP_FRACTION), max_offset)
+
     -- lines_per_screen must never be 0 -- a font size that would produce 0
     -- clamps to 1, so the reader degrades to one line per page instead of
     -- an infinite loop (edge case 3).
@@ -599,6 +642,7 @@ function Reader:layoutPage()
         n_lines = page.total_lines,
         rules_enabled = self.rules_enabled,
         width = self.text_width,
+        y_offset = self.rule_y_offset or 0,
     }
     self.ruled_page[1] = self.page_group
 
