@@ -407,6 +407,27 @@ end
 -- Callers must render nothing rather than reporting a failure. A pack built
 -- before the table existed is also handled -- the query is pcall-guarded, so a
 -- missing table returns nil like a missing row.
+-- Which id the introductions are filed under, which is NOT the translation's.
+--
+-- The verses and the introductions are by different authors: the pack may
+-- carry Itani's translation and Maududi's introductions, under different
+-- licences. Filing the intros under the translator's id would attribute one
+-- man's writing to another, so the pack records `intro_id` separately and this
+-- is how the reader finds it. nil means the pack has no introductions, which
+-- is normal and not an error.
+function DB.getIntroId(tconn)
+    if not tconn then
+        return nil
+    end
+    local ok, value = pcall(function()
+        return rowexecBound(tconn, "SELECT value FROM trans_meta WHERE key = ?;", "intro_id")
+    end)
+    if not ok then
+        return nil
+    end
+    return value
+end
+
 function DB.getSurahIntro(tconn, trans_id, surah)
     if not tconn then
         return nil

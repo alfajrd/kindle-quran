@@ -1123,6 +1123,66 @@ function Reader:openNavigator(which)
     end
 end
 
+-- Shows the current surah's introduction, if the pack carries one.
+--
+-- A button rather than an automatic screen on entering a surah. The intros run
+-- from 1,300 to 45,800 characters, so making one unavoidable on every visit
+-- would put a chapter of prose between the reader and the tenth time they open
+-- Al-Baqarah. docs/BACKLOG.md asked for "shown once, and skippable"; a button
+-- is the version of that which never has to guess whether you have read it.
+--
+-- TextViewer because these are long and must scroll. InfoMessage does not, and
+-- would simply cut a 45,000-character intro off at the screen edge.
+function Reader:showSurahIntro()
+    if not self.tconn or not self.intro_id then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: this pack carries no surah introductions.",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local text = DB.getSurahIntro(self.tconn, self.intro_id, self.surah)
+    if not text or text == "" then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: no introduction for surah " .. tostring(self.surah) .. ".",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local title = "Surah " .. tostring(self.surah)
+    if self.intro_source and self.intro_source ~= "" then
+        title = title .. "  --  " .. self.intro_source
+    end
+
+    local ok_tv, TextViewer = pcall(require, "ui/widget/textviewer")
+    if ok_tv and TextViewer then
+        local ok_show = pcall(function()
+            UIManager:show(TextViewer:new{
+                title = title,
+                text = text,
+                width = math.floor(Screen:getWidth() * 0.95),
+                height = math.floor(Screen:getHeight() * 0.9),
+            })
+        end)
+        if ok_show then
+            return
+        end
+    end
+
+    -- Fallback: better a truncated intro than none. Says so rather than
+    -- letting the reader think the text simply ends there.
+    UIManager:show(InfoMessage:new{
+        text = title .. "\n\n" .. text:sub(1, 1200) ..
+            "\n\n[truncated -- the scrolling viewer is unavailable on this build]",
+        show_icon = false,
+        dismissable = true,
+    })
+end
+
 -- Shows the interleaved layout's real numbers, for photographing.
 --
 -- The device is the only place these can be read, and a photograph of them is
@@ -1307,6 +1367,12 @@ function Reader:openSettings()
             self:applySetting("rules_enabled", not self.rules_enabled)
         end },
     }
+    if self.intro_id then
+        rules_row[#rules_row + 1] = { text = "Surah intro", callback = function()
+            closeDialog()
+            self:showSurahIntro()
+        end }
+    end
     if self:isInterleaved() then
         rules_row[#rules_row + 1] = { text = "Diagnostics", callback = function()
             closeDialog()
@@ -1470,6 +1536,18 @@ function Reader:init()
     self.ayahDisplayText = ayahDisplayText
     self.ayahMarker = ayahMarker
     self.row_cache = {}
+
+    -- Introductions belong to the PACK, not the layout, so they are resolved
+    -- here rather than inside resolveMode -- which returns early in
+    -- Arabic-only mode and would have hidden them in half the reader.
+    --
+    -- Keyed by their own id, not the translation's: they are usually a
+    -- different author under a different licence. Absent is normal, since the
+    -- table shipped empty and many packs will never fill it.
+    if self.tconn then
+        self.intro_id = DB.getIntroId(self.tconn)
+        self.intro_source = DB.getTransMeta(self.tconn, "intro_source")
+    end
 
     self:resolveMode()
 
