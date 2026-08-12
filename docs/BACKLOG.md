@@ -123,8 +123,8 @@ unambiguous open licence.
 
 | Translation | Status | Usable? |
 |---|---|---|
-| **Sahih International** | Dar Abul Qasim; no public licence grant found | ❌ |
-| **The Clear Quran** (Khattab) | © Al-Furqaan Foundation, all rights reserved | ❌ |
+| **Sahih International** | Dar Abul Qasim; no public licence grant found. QUL hosts it for download but records **no** copyright info — see the QUL survey below; that is not a grant | ❌ |
+| **The Clear Quran** (Khattab) | © Al-Furqaan Foundation. **Confirmed closed 11 Aug 2026:** Furqaan Institute holds an *exclusive* licence, quoted below; QUL declines to offer it for download at all | ❌ |
 | **Yusuf Ali** | PD in Pakistan since 2002 (life+50), but a pro-forma **US copyright runs to 2033**, and the Islamic Computing Centre asserts rights | ⚠️ jurisdictional |
 | **Pickthall** | d. 1936 → PD in life+50 and life+70 countries (UK/EU since 2006, Indonesia life+70). **Not clearly PD in the US** — published in India after 1922. ICC also asserts rights | ⚠️ jurisdictional |
 | **quranenc.com** (King Fahd Complex) | Portal states its translations are free to distribute; terms not confirmed in writing | ❓ ask |
@@ -151,3 +151,86 @@ is only the translations that are unresolved.
 hard part get built while the licensing conversation happens in parallel, and
 it costs nothing if a licence later clears: a bundled pack is then just a
 side-loaded pack that ships in the box.
+
+---
+
+### Sourcing survey — QUL, 11 August 2026
+
+Checked as part of M3. **QUL is the only legitimate machine-readable source
+found**, and it settles two questions.
+
+[qul.tarteel.ai](https://qul.tarteel.ai/) — Tarteel's Quran data library, the
+data behind quran.com. The CMS is open source
+([TarteelAI/quranic-universal-library](https://github.com/TarteelAI/quranic-universal-library),
+MIT). **The MIT licence covers the Rails code only, not the hosted content** —
+a distinction worth stating, because the repo badge invites the opposite
+reading.
+
+Its `resource_permissions` table is the useful part:
+
+```ruby
+t.integer "permission_to_host",  default: 0   # unknown|requested|granted|rejected
+t.integer "permission_to_share", default: 0   # unknown|requested|granted|rejected
+t.string  "copyright_notice"
+t.string  "source_info"
+t.string  "contact_info"
+```
+
+Host and share tracked separately, per resource. Worth mirroring in
+`THIRD-PARTY.md`: we need neither for personal use, and both for a release.
+
+#### Finding 1 — The Clear Quran is closed, confirmed in writing
+
+Resource **426**. Of 191 translations listed, Khattab's is one of three marked
+copyrighted and the only English one, and it is offered with **no download in
+any format** while every other entry offers `simple.sqlite` / `simple.json`
+and footnote variants. Its
+[copyright page](https://qul.tarteel.ai/resources/426/copyright) states:
+
+> "Furqaan Institute of Quranic Education has the exclusive license to publish,
+> distribute, and disseminate 'THE CLEAR QURAN® Series', translated by
+> Dr. Mustafa Khattab."
+
+That upgrades the table row above from "no grant found" to **an exclusive
+licence held by a third party, quoted from the rightsholder's own notice**. The
+only route to it is asking Furqaan Institute directly
+(theclearquran.org/copyright-information).
+
+Consequence for M3: **`trans_surah_intro` ships empty.** The surah
+introductions are Khattab's own writing and no obtainable translation has an
+equivalent. The schema is built anyway — a missing intro is a skip, not an
+error, which it must be regardless since no future pack is guaranteed to carry
+them.
+
+#### Finding 2 — a QUL download is NOT a licence grant
+
+This is the trap, and it is the same inference that produced the wrong-corpus
+error in `ERRATA.md`: **availability is not permission.**
+
+Permission pages for the downloadable English translations, sampled 11 August
+2026 — Saheeh International (193), Pickthall (145), Abdul Haleem (154), Taqi
+Usmani (153), Bridges (179), Yusuf Ali (124). **All six return:**
+
+> "We don't have copyright information for this resource."
+
+That is `unknown` — the schema **default**. Not a grant, not even a request:
+the absence of a record. Saheeh International being downloadable is therefore
+fully consistent with the table above finding no public grant for it, and is
+not evidence against that finding.
+
+**So: never read a QUL download button as clearance.** It means no claim was
+logged. Personal use needs neither host nor share permission and is unaffected;
+any redistribution decision must go back to the rightsholder, not to QUL.
+
+#### Also checked, and rejected
+
+- **clearquran.com** (Talal Itani) — CC BY-NC-ND 4.0, genuine free downloads in
+  PDF/ePub/Word/verse-by-verse. A **different translation** with a confusingly
+  similar name, and no surah intros. Usable, and the clean fallback if a
+  downloadable pack is wanted immediately: non-commercial personal use sits
+  squarely inside that licence, and a verbatim format conversion is not a
+  derivative.
+- **archive.org / quranmualim / libgen scans of Khattab** — unauthorised copies.
+  Reachability is not a licence. Not a sourcing route.
+- **Al-Furqaan's free-copy programme** (furqaanproject.org) — US/Canada
+  non-Muslims only; explicitly not free for Muslims. Does not apply.
