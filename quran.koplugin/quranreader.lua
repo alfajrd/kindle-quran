@@ -1236,6 +1236,31 @@ function Reader:openSettings()
     if juz then
         readout = readout .. "  -  juz " .. tostring(juz)
     end
+    -- Sajdah on this page. The mark itself is already in the text -- U+06E9
+    -- sits in all 15 verses and renders because the text renders verbatim --
+    -- but it lands at the END of an ayah, which on a long one may be several
+    -- sub-pages from where the reader is looking. Saying so here is the part
+    -- the inline mark cannot do.
+    -- The two models name their page contents differently -- Arabic-only
+    -- builds `slices`, interleaved builds `items` -- and the basmala heading
+    -- has no ayah at all, so `item.ayah` is checked rather than assumed.
+    local page_items = self.current_page
+        and (self.current_page.slices or self.current_page.items)
+    if page_items then
+        local seen = {}
+        for _, item in ipairs(page_items) do
+            local a = item.ayah
+            if a and not seen[a] then
+                seen[a] = true
+                if DB.isSajdah(self.conn, self.surah, a) then
+                    readout = readout .. "  -  SAJDAH at " .. tostring(self.surah) ..
+                        ":" .. tostring(a)
+                    break
+                end
+            end
+        end
+    end
+
     -- On a split ayah, say which part of it you are on. Without this the only
     -- way to tell page 3 of 2:282 from page 4 is to read them, which is also
     -- the only way to notice a split going wrong.

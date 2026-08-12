@@ -158,6 +158,14 @@ Getting them wrong is immediately visible to anyone who knows the text.
   Latin numeral inside Arabic text.
 - **Sajdah.** 15 verses carry a prostration mark. Flag them in the data and
   render the mark; do not synthesise one.
+
+  **Already satisfied by verbatim rendering**, established 12 August 2026:
+  U+06E9 is present in the Tanzil text at exactly those 15 verses, so the mark
+  appears because the reader does not interfere with the text. The `sajdah`
+  column is therefore *not* what draws it — it exists for what the inline mark
+  cannot do, which is say so at a glance: the mark sits at the END of an ayah,
+  and on a long one that may be several sub-pages from where the reader is
+  looking. The position readout names it.
 - **Waqf marks** are part of the Uthmani text. Render as-is.
 - **Surah metadata** — Meccan/Medinan, ayah count, revelation order — shown on
   the surah header and in the navigator.

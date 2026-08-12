@@ -310,6 +310,31 @@ function DB.listJuz(conn)
     return out, nil
 end
 
+-- -> true if this ayah carries a prostration mark.
+--
+-- NOT used to render the mark. U+06E9 is already present in the Tanzil text at
+-- exactly these 15 verses, so rendering it is what verbatim display already
+-- does -- SPEC-v1 §6's "render the mark; do not synthesise one" is satisfied
+-- by not interfering.
+--
+-- What the column is good for is what the inline mark cannot do: say so at a
+-- glance. A sajdah sits at the END of a long ayah, and in interleaved mode it
+-- may be several sub-pages away from where the reader is looking. This lets
+-- the position readout mention it.
+function DB.isSajdah(conn, surah, ayah)
+    if not conn then
+        return false
+    end
+    local ok, value = pcall(function()
+        return rowexecBound(conn, "SELECT sajdah FROM ayah WHERE surah = ? AND ayah = ?;",
+                            surah, ayah)
+    end)
+    if not ok then
+        return false
+    end
+    return tonumber(value) == 1
+end
+
 -- -> juz number, or nil. Used to show where the reader currently is.
 function DB.juzOf(conn, surah, ayah)
     if not conn then

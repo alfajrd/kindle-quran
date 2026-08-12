@@ -148,6 +148,136 @@ function Quran:onDispatcherRegisterActions()
         title = _("Qur'an — go to reference"),
         general = true,
     })
+    Dispatcher:registerAction("quran_about", {
+        category = "none",
+        event = "QuranAbout",
+        title = _("Qur'an — about"),
+        general = true,
+    })
+end
+
+-- SPEC-v1 §5.7. The credits screen, built from what the packs declare about
+-- themselves rather than from constants here -- a licence line hard-coded in
+-- the app would keep saying "Tanzil, CC BY 3.0" after someone swapped the
+-- pack, which is worse than saying nothing.
+--
+-- Why this is not optional. Tanzil's licence requires attribution and a link,
+-- and until now the only place either appeared was THIRD-PARTY.md -- in the
+-- repository, which a reader never opens. Complying in a file nobody reads is
+-- not the same as complying.
+--
+-- The errata are disclosed here for the same reason they are disclosed in the
+-- self-test: showing "the text must not be modified" while quietly not
+-- mentioning that two codepoints were would make this screen a lie of
+-- omission. See docs/ERRATA.md.
+function Quran:showAbout()
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s or "" end
+
+    add("Qur'an for KOReader")
+    add("A personal-use reader. Not affiliated with any publisher.")
+    add("")
+    add("This is not a mushaf. It renders flowing text by ayah, not the")
+    add("Madani page layout.")
+    add("")
+
+    local dir = self:packPath()
+    local conn = nil
+    if dir and DB then
+        conn = DB.open(dir .. "/data/quran.db")
+    end
+
+    add("ARABIC TEXT")
+    if conn then
+        add("  " .. (DB.getMeta(conn, "name") or "?"))
+        add("  " .. (DB.getMeta(conn, "attribution") or "?"))
+        add("  Source:  " .. (DB.getMeta(conn, "source_url") or "?"))
+        add("  Licence: " .. (DB.getMeta(conn, "licence") or "?"))
+        local terms = DB.getMeta(conn, "terms")
+        if terms and terms ~= "" then
+            add("  Terms:   " .. terms)
+        end
+        local n = tonumber(DB.getMeta(conn, "errata_count")) or 0
+        if n > 0 then
+            add("")
+            add("  Declared corrections: " .. tostring(n))
+            add("  " .. (DB.getMeta(conn, "errata_ids") or ""))
+            add("  The text is otherwise byte-identical to the source. Each")
+            add("  correction is recorded with before/after hashes in the")
+            add("  project's ERRATA.md, and was reported upstream.")
+        end
+        DB.close(conn)
+    else
+        add("  (the pack could not be opened)")
+    end
+
+    add("")
+    add("TYPEFACE")
+    add("  Scheherazade New, by SIL International")
+    add("  SIL Open Font Licence 1.1")
+
+    -- The translation pack is optional, and saying so is part of the credit:
+    -- a reader with none installed should see that this app ships none, not a
+    -- blank heading.
+    local tconn = nil
+    if dir then
+        tconn = self:openTranslation(dir)
+    end
+    add("")
+    add("TRANSLATION")
+    if tconn then
+        add("  " .. (DB.getTransMeta(tconn, "name") or "?"))
+        add("  " .. (DB.getTransMeta(tconn, "attribution") or "?"))
+        add("  Source:  " .. (DB.getTransMeta(tconn, "source_url") or "?"))
+        add("  Licence: " .. (DB.getTransMeta(tconn, "licence") or "?"))
+
+        local intro_source = DB.getTransMeta(tconn, "intro_source")
+        add("")
+        add("SURAH INTRODUCTIONS")
+        if intro_source and intro_source ~= "" then
+            -- Named separately because they are a different author under a
+            -- different licence from the verses beside them.
+            add("  " .. intro_source)
+            add("  Licence: " .. (DB.getTransMeta(tconn, "intro_licence") or "?"))
+        else
+            add("  none in this pack")
+        end
+        DB.close(tconn)
+    else
+        add("  No translation pack is installed.")
+        add("  This app bundles none: no widely-used English translation has")
+        add("  an unambiguous open licence. Side-load your own.")
+    end
+
+    add("")
+    add("PERSONAL USE")
+    add("  Packs built for this reader are for the device owner. Nothing")
+    add("  here is cleared for redistribution.")
+
+    local text = table.concat(lines, "\n")
+    local ok_tv, TextViewer = pcall(require, "ui/widget/textviewer")
+    if ok_tv and TextViewer then
+        local shown = pcall(function()
+            UIManager:show(TextViewer:new{
+                title = "About",
+                text = text,
+                width = math.floor(Screen:getWidth() * 0.95),
+                height = math.floor(Screen:getHeight() * 0.9),
+            })
+        end)
+        if shown then
+            return
+        end
+    end
+    UIManager:show(InfoMessage:new{
+        text = text,
+        show_icon = false,
+        dismissable = true,
+    })
+end
+
+function Quran:onQuranAbout()
+    self:showAbout()
 end
 
 function Quran:onQuranSurahs()
@@ -206,6 +336,11 @@ function Quran:addToMainMenu(menu_items)
         text = _("Qur'an — go to reference"),
         sorting_hint = "tools",
         callback = function() self:openNavigator("reference") end,
+    }
+    menu_items.quran_about = {
+        text = _("Qur'an — about"),
+        sorting_hint = "tools",
+        callback = function() self:showAbout() end,
     }
 end
 
