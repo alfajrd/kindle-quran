@@ -56,10 +56,18 @@ spec's own best-effort claim and flagged here.
       the widget renders exactly `k` lines and occupies exactly that height
       -- no internal padding. This is what STEP P3's slice heights assume;
       if wrong, on-device check D3/D5 would show drift or clipped lines.
-  MUST-VERIFY V25: `top_line_num` is 1-based. STEP P3 passes
-      `slice.first_line + 1`. If this is actually 0-based, every slice
-      after the first ayah's first slice would be off by one line -- D5's
-      "no text repeated or skipped at any seam" is exactly the symptom.
+  MUST-VERIFY V25: DISPROVED ON DEVICE, 12 August 2026. The question was
+      whether `top_line_num` is 0- or 1-based. It is neither: it is IGNORED.
+      Two boxes over the same text, asked to start at lines 1 and 4, both
+      reported virtual_line_num 1. Every continuation slice rendered the ayah
+      from its first line, so a long ayah repeated its opening lines page
+      after page -- precisely D5's "no text repeated at any seam", which never
+      failed because it was never run on an ayah long enough to split.
+
+      Note the shape of the mistake. V25 asked which CONVENTION the key used,
+      and so presupposed the key was read at all; the more basic question went
+      unasked for two milestones. STEP P3 no longer passes it -- see
+      `sliceBox` below, and STEP W2, whose whole model had to change with it.
   MUST-VERIFY V26: `TextBoxWidget:free()` exists and releases shaped-text
       resources. Every widget built here -- including throwaway measuring
       probes -- is freed exactly once (edge case 27); leaking one per ayah
@@ -396,6 +404,64 @@ function RuledPage:paintTo(bb, x, y)
     end
 end
 
+-- Builds one page's worth of an ayah, scrolled to sub-page `sub`.
+--
+-- `top_line_num` DOES NOT WORK on this KOReader build. Probed on device
+-- (quranrows.lua's Rows.diagnostics): two boxes over the same text, asked to
+-- start at lines 1 and 4, both reported virtual_line_num 1. Every continuation
+-- rendered from line one, so a long ayah repeated its opening lines.
+--
+-- It went unnoticed because it was never exercised: the only surah read on
+-- device was Al-Fatiha, and none of its ayat is long enough to split. The
+-- MUST-VERIFY note above (V25) said the key was 1-based, which quietly assumed
+-- it was read at all.
+--
+-- `scrollDown()` advances by exactly one visible page, which is why STEP W2
+-- now splits oversized ayat into uniform pages -- the two have to agree or the
+-- scroll lands on the wrong lines.
+--
+-- DELIBERATELY DUPLICATED from quranrows.lua's Rows.sliceBox rather than
+-- shared. This mode must keep working when quranrows.lua fails to load, which
+-- is exactly the fallback quranreader.lua promises; importing from it to page
+-- Arabic-only would make that promise circular.
+local function sliceBox(self, opts)
+    local ok, box = pcall(function()
+        return TextBoxWidget:new{
+            text = opts.text,
+            face = opts.face,
+            width = opts.width,
+            height = opts.height,
+            line_height = opts.line_height,
+            alignment = "left",
+            auto_para_direction = true,
+        }
+    end)
+    if not ok or not box then
+        return nil
+    end
+
+    local sub = opts.sub or 0
+    if sub > 0 then
+        local before, after
+        pcall(function() before = box.virtual_line_num end)
+        pcall(function()
+            for _ = 1, sub do
+                box:scrollDown()
+            end
+        end)
+        pcall(function() after = box.virtual_line_num end)
+        -- Verified, not trusted. A box that failed to scroll still renders --
+        -- wrong lines beat a blank page -- and the failure is recorded so it
+        -- can be reported rather than silently shown.
+        if before and after and after > before then
+            self.slice_mechanism = "scrollDown"
+        else
+            self.slice_mechanism = "FAILED (" .. tostring(before) .. " -> " .. tostring(after) .. ")"
+        end
+    end
+    return box
+end
+
 -- ---------------------------------------------------------------------------
 -- The reader widget.
 -- ---------------------------------------------------------------------------
@@ -604,49 +670,115 @@ function Reader:cacheLineCount(key, n)
     self.line_count_cache[key] = n
 end
 
--- STEP W2
-function Reader:buildPageFrom(ayah, line)
-    local budget = self.lines_per_screen
-    local a, l = ayah, line
-    local slices = {}
-    while budget > 0 and a <= self.ayah_count do
-        local n = self:linesOf(a) - l
-        if n <= 0 then
-            a = a + 1
-            l = 0
-        else
-            local take = math.min(n, budget)
-            slices[#slices + 1] = { ayah = a, first_line = l, n_lines = take }
-            budget = budget - take
-            if take == n then
-                a = a + 1
-                l = 0
-            else
-                l = l + take
-            end
-        end
+-- STEP W2 -- rewritten 12 August 2026. See the note on `sliceBox` below.
+--
+-- The old model packed a page with variable-length slices, so a page could
+-- read [tail of ayah A][ayah B][head of ayah C], and a continuation slice
+-- started at an arbitrary line ordinal. That required `top_line_num`, which
+-- this KOReader build IGNORES -- proved by the probe in quranrows.lua. Every
+-- continuation rendered the ayah from line one instead, so a long ayah
+-- repeated its opening lines page after page.
+--
+-- The mechanism that does work, `scrollDown()`, advances by exactly one
+-- visible page. That only lands on the right lines if the splits are UNIFORM,
+-- so the model is now the same one interleaved mode uses:
+--
+--   * whole ayat are packed greedily while they fit;
+--   * an ayah that does not fit the remaining space starts the next page
+--     whole -- it is never cut to fill a gap;
+--   * an ayah too long for a page of its own is split into sub-pages of
+--     exactly `lines_per_screen` lines, which is what makes scrollDown exact.
+--
+-- The cost is whitespace at the foot of a page when the next ayah is too long
+-- to join it. That is the price of paging that works, and most ayat are short
+-- enough that it rarely shows.
+--
+-- `line` now carries the sub-page ordinal, not a line ordinal. Both mean "how
+-- far into top_ayah are we", so the saved position still serves both modes.
+function Reader:subPagesOf(ayah)
+    local n = self:linesOf(ayah)
+    if n <= self.lines_per_screen then
+        return 1
     end
-    return { slices = slices, total_lines = self.lines_per_screen - budget }, a, l
+    return math.ceil(n / self.lines_per_screen)
 end
 
--- STEP W3
-function Reader:topOfPreviousPage(ayah, line)
+function Reader:buildPageFrom(ayah, sub)
+    local items = {}
     local budget = self.lines_per_screen
-    local a, l = ayah, line
-    while budget > 0 do
-        if l > 0 then
-            local take = math.min(budget, l)
-            l = l - take
+    local a, s = ayah, sub or 0
+
+    -- Resuming inside an oversized ayah: that sub-page owns the screen.
+    if s > 0 then
+        local total = self:subPagesOf(a)
+        local first = s * self.lines_per_screen
+        local take = math.max(0, math.min(self:linesOf(a) - first, self.lines_per_screen))
+        items[#items + 1] = { ayah = a, sub = s, of = total, n_lines = take }
+        if s + 1 < total then
+            return { slices = items, total_lines = take }, a, s + 1
+        end
+        return { slices = items, total_lines = take }, a + 1, 0
+    end
+
+    while a <= self.ayah_count do
+        local n = self:linesOf(a)
+        if n <= budget then
+            items[#items + 1] = { ayah = a, sub = 0, of = 1, n_lines = n }
+            budget = budget - n
+            a = a + 1
+        elseif #items == 0 then
+            -- Too long for a page even alone: split it uniformly.
+            local total = self:subPagesOf(a)
+            local take = math.min(n, self.lines_per_screen)
+            items[#items + 1] = { ayah = a, sub = 0, of = total, n_lines = take }
             budget = budget - take
-        elseif a > 1 then
-            a = a - 1
-            l = self:linesOf(a)
+            if total > 1 then
+                return { slices = items, total_lines = self.lines_per_screen - budget }, a, 1
+            end
+            return { slices = items, total_lines = self.lines_per_screen - budget }, a + 1, 0
         else
-            -- Start of surah; clamp (edge case 5).
             break
         end
     end
-    return a, l
+
+    return { slices = items, total_lines = self.lines_per_screen - budget }, a, 0
+end
+
+-- STEP W3 -- derived by re-running the forward packer, not by inverting it.
+--
+-- Forward packing depends on measured line counts; an inverse that "looks
+-- right" drifts out of step with it as soon as an ayah splits. Slower, and
+-- always consistent with what paging forward shows.
+function Reader:topOfPreviousPage(ayah, sub)
+    if (sub or 0) > 0 then
+        return ayah, sub - 1
+    end
+    if ayah <= 1 then
+        return 1, 0
+    end
+
+    local target = ayah
+    local floor_a = math.max(1, target - 64)
+    local best_a, best_s = target - 1, 0
+    local candidate = target - 1
+
+    while candidate >= floor_a do
+        local total = self:subPagesOf(candidate)
+        local start_s = total > 1 and (total - 1) or 0
+        local _, next_a, next_s = self:buildPageFrom(candidate, start_s)
+        if next_a == target and (next_s or 0) == 0 then
+            best_a, best_s = candidate, start_s
+            -- An earlier whole-ayah start that still ends here packs more onto
+            -- the page, and that is the real previous page.
+            if start_s ~= 0 then
+                break
+            end
+            candidate = candidate - 1
+        else
+            break
+        end
+    end
+    return best_a, best_s
 end
 
 function Reader:onDbError(err)
@@ -698,21 +830,17 @@ function Reader:layoutPage()
             return
         end
         local display_text = ayahDisplayText(text, ayahMarker(slice.ayah))
-        local ok_widget, widget = pcall(function()
-            return TextBoxWidget:new{
-                text = display_text,
-                face = Font:getFace(ARABIC_FONT, self.arabic_font_size),
-                width = self.text_width,
-                height = slice.n_lines * self.px_per_line,   -- exact multiple
-                line_height = self.arabic_line_height,        -- em, extra leading
-                top_line_num = slice.first_line + 1,          -- 1-based, V25
-                alignment = "left",
-                auto_para_direction = true,
-            }
-        end)
-        if not ok_widget or not widget then
+        local widget = sliceBox(self, {
+            text = display_text,
+            face = Font:getFace(ARABIC_FONT, self.arabic_font_size),
+            width = self.text_width,
+            height = slice.n_lines * self.px_per_line,   -- exact multiple
+            line_height = self.arabic_line_height,       -- em, extra leading
+            sub = slice.sub,
+        })
+        if not widget then
             self.laying_out = false
-            self:failInit("Qur'an reader: could not build page layout (" .. tostring(widget) .. "). Closing the reader.")
+            self:failInit("Qur'an reader: could not build page layout. Closing the reader.")
             UIManager:close(self)
             return
         end

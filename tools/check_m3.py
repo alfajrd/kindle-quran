@@ -275,6 +275,42 @@ def check_m3_wiring(sources):
            "trailing page can render a blank column (%d reads, %d accounted for)"
            % (len(caps), len(allowed)))
 
+    # top_line_num is IGNORED by this KOReader build -- proved on device, 12
+    # Aug 2026, by the probe in Rows.diagnostics. It cost two milestones of a
+    # silently broken pager in BOTH modes, because nothing exercised it: the
+    # only surah read on device was Al-Fatiha, whose ayat never need splitting.
+    #
+    # Passing it again would look correct and do nothing. Comments are stripped
+    # before this runs, so the notes explaining the history do not trip it --
+    # only a live constructor key does. The probe in Rows.diagnostics is the
+    # sole exception: its whole purpose is to pass the key and observe that it
+    # is ignored.
+    offenders = []
+    for fname, src in sources.items():
+        scan = src
+        if fname == "quranrows.lua":
+            scan = re.sub(r"function\s+Rows\.diagnostics\b.*?\nend\n", "", scan, flags=re.S)
+        for m in re.finditer(r"\btop_line_num\s*=", scan):
+            offenders.append("%s:%d" % (fname, scan.count("\n", 0, m.start()) + 1))
+    record("X22", not offenders,
+           "top_line_num is passed nowhere but the probe that exposes it "
+           "(it is ignored by this build; scrolling is the mechanism)"
+           + ("" if not offenders else "  -- STILL PASSED AT: " + ", ".join(offenders)))
+
+    # Both modes must scroll, and both must check that the scroll moved.
+    #
+    # Matches the CALL and the COMPARISON, not the words. The first version of
+    # these two tested `"scrollDown" in src` and `"slice_mechanism" in src`,
+    # which the string literal `self.slice_mechanism = "scrollDown"` satisfied
+    # on its own -- both passed with the scroll and the verification removed.
+    for fname, cid in (("quranrows.lua", "X23"), ("quranreader.lua", "X24")):
+        src = sources.get(fname, "")
+        scrolls = re.search(r":scrollDown\s*\(\s*\)", src) is not None
+        verifies = re.search(r"\bafter\s*>\s*before\b", src) is not None
+        record(cid, scrolls and verifies,
+               "%s calls :scrollDown() and verifies the line actually moved "
+               "(scroll=%s verify=%s)" % (fname, scrolls, verifies))
+
     check_m4_wiring(sources)
 
 
