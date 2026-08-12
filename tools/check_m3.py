@@ -255,16 +255,25 @@ def check_m3_wiring(sources):
     # never by each column's own page capacity. The latter lets the shorter
     # column exhaust itself early and renders a trailing page with one column
     # blank -- observed on 2:282, page 4, translation missing.
+    # splitPlan may read them because that is where the share is derived, and
+    # diagnostics may read them because it only prints them. Anywhere else
+    # means the LAYOUT is reaching for page capacity again, which is the
+    # defect: the shorter column exhausts early and a trailing page renders
+    # with one side blank.
+    def _body(name):
+        m = re.search(r"function\s+Rows\.%s\b(.*?)\nend\n" % name, rows, re.S)
+        return m.group(1) if m else ""
+
     caps = re.findall(r"lines_per_page_(?:ar|en)", rows)
-    in_plan = re.search(r"function\s+Rows\.splitPlan\b(.*?)\nend\n", rows, re.S)
-    plan_caps = re.findall(r"lines_per_page_(?:ar|en)", in_plan.group(1) if in_plan else "")
-    setter = re.findall(r"self\.lines_per_page_(?:ar|en)\s*=", rows)
+    allowed = (re.findall(r"lines_per_page_(?:ar|en)", _body("splitPlan"))
+               + re.findall(r"lines_per_page_(?:ar|en)", _body("diagnostics"))
+               + re.findall(r"self\.lines_per_page_(?:ar|en)\s*=", rows))
     record("X21",
-           bool(in_plan) and len(caps) == len(plan_caps) + len(setter),
-           "lines_per_page_* is read only inside Rows.splitPlan -- the layout "
-           "advances columns by their share, so no trailing page can render a "
-           "blank column (%d reads, %d in splitPlan, %d assignments)"
-           % (len(caps), len(plan_caps), len(setter)))
+           bool(_body("splitPlan")) and len(caps) == len(allowed),
+           "lines_per_page_* is read only where the share is derived or "
+           "reported -- the layout advances columns by their share, so no "
+           "trailing page can render a blank column (%d reads, %d accounted for)"
+           % (len(caps), len(allowed)))
 
     check_m4_wiring(sources)
 

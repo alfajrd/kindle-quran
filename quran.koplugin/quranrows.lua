@@ -287,6 +287,101 @@ function Rows.subPageCount(self, ayah)
 end
 
 -- ---------------------------------------------------------------------------
+-- Diagnostics
+-- ---------------------------------------------------------------------------
+
+-- Reports the real numbers behind a split, plus a direct probe of whether
+-- TextBoxWidget honours `top_line_num`.
+--
+-- This exists because a device report -- "the Arabic repeated three times
+-- while the English ran out" -- had two possible causes and guessing between
+-- them would have cost another trip. Identical Arabic on every sub-page is
+-- what you get if `top_line_num` is ignored: each one renders from line 1 and
+-- is clipped to the row height. The probe below settles it rather than
+-- inferring it.
+--
+-- `virtual_line_num` is TextBoxWidget's own record of which line it starts
+-- from; upstream sets it from `top_line_num` at init. If it comes back as 1
+-- when 4 was asked for, the key is not honoured and every mid-ayah slice in
+-- this project is rendering the wrong lines.
+function Rows.diagnostics(self, ayah)
+    local out = {}
+    local function add(s) out[#out + 1] = s end
+
+    add("geometry")
+    add("  text " .. tostring(self.text_width) .. " x " .. tostring(self.text_height))
+    add("  col " .. tostring(self.col_width) ..
+        "  pitch ar " .. tostring(self.row_pitch_ar) ..
+        "  en " .. tostring(self.row_pitch_en))
+    add("  per page  ar " .. tostring(self.lines_per_page_ar) ..
+        "  en " .. tostring(self.lines_per_page_en))
+
+    local ok_m, m = pcall(function() return Rows.metrics(self, ayah) end)
+    local ok_p, plan = pcall(function() return Rows.splitPlan(self, ayah) end)
+    add("")
+    add("ayah " .. tostring(self.surah) .. ":" .. tostring(ayah))
+    if ok_m and m then
+        add("  lines  ar " .. tostring(m.n_ar) .. "  en " .. tostring(m.n_en))
+        add("  row height " .. tostring(m.height))
+    else
+        add("  metrics FAILED: " .. tostring(m))
+    end
+    if ok_p and plan then
+        add("  split  " .. tostring(plan.total) .. " page(s)" ..
+            "  ar " .. tostring(plan.per_ar) .. "/page" ..
+            "  en " .. tostring(plan.per_en) .. "/page")
+    else
+        add("  splitPlan FAILED: " .. tostring(plan))
+    end
+    add("  now on part " .. tostring((self.top_line or 0) + 1))
+
+    -- The probe. Two boxes over the same text, asking to start at different
+    -- lines. If they agree, the key is being ignored.
+    add("")
+    add("top_line_num probe")
+    local text = Rows.arabicText(self, ayah)
+    if not text then
+        add("  could not read the ayah")
+        return table.concat(out, "\n")
+    end
+    local function probe(n)
+        local ok, box = pcall(function()
+            return TextBoxWidget:new{
+                text = text,
+                face = Rows.arabicFace(self),
+                width = self.col_width,
+                height = 3 * (self.row_pitch_ar or 40),
+                line_height = self.arabic_line_height,
+                top_line_num = n,
+                alignment = "right",
+                auto_para_direction = false,
+                para_direction_rtl = true,
+            }
+        end)
+        if not ok or not box then
+            return nil, "construction failed: " .. tostring(box)
+        end
+        local vln
+        pcall(function() vln = box.virtual_line_num end)
+        pcall(function() box:free() end)
+        return vln, nil
+    end
+    local a, err_a = probe(1)
+    local b, err_b = probe(4)
+    add("  asked 1 -> virtual_line_num " .. tostring(a) .. (err_a and (" (" .. err_a .. ")") or ""))
+    add("  asked 4 -> virtual_line_num " .. tostring(b) .. (err_b and (" (" .. err_b .. ")") or ""))
+    if a == nil or b == nil then
+        add("  VERDICT: virtual_line_num not exposed -- inconclusive")
+    elseif a == b then
+        add("  VERDICT: IGNORED. Every sub-page renders from the same line.")
+    else
+        add("  VERDICT: honoured (" .. tostring(a) .. " vs " .. tostring(b) .. ")")
+    end
+
+    return table.concat(out, "\n")
+end
+
+-- ---------------------------------------------------------------------------
 -- Pagination
 -- ---------------------------------------------------------------------------
 

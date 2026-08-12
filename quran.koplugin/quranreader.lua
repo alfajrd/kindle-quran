@@ -993,6 +993,23 @@ function Reader:openNavigator(which)
     end
 end
 
+-- Shows the interleaved layout's real numbers, for photographing.
+--
+-- The device is the only place these can be read, and a photograph of them is
+-- worth more than a description: "the Arabic repeated three times" had two
+-- plausible causes and no way to choose between them from here.
+function Reader:showDiagnostics()
+    if not self:isInterleaved() then
+        return
+    end
+    local ok, text = pcall(function() return Rows.diagnostics(self, self.top_ayah) end)
+    UIManager:show(InfoMessage:new{
+        text = ok and text or ("diagnostics failed: " .. tostring(text)),
+        show_icon = false,
+        dismissable = true,
+    })
+end
+
 function Reader:openSettings()
     local ok_bd, ButtonDialog = pcall(require, "ui/widget/buttondialog")
     if not ok_bd or not ButtonDialog then
@@ -1148,12 +1165,19 @@ function Reader:openSettings()
         { text = "Line " .. string.format("%.2f", self.arabic_line_height) },
         { text = "Leading +", callback = leading_plus_cb },
     }
-    buttons[#buttons + 1] = {
+    local rules_row = {
         { text = "Rules: " .. (self.rules_enabled and "on" or "off"), callback = function()
             closeDialog()
             self:applySetting("rules_enabled", not self.rules_enabled)
         end },
     }
+    if self:isInterleaved() then
+        rules_row[#rules_row + 1] = { text = "Diagnostics", callback = function()
+            closeDialog()
+            self:showDiagnostics()
+        end }
+    end
+    buttons[#buttons + 1] = rules_row
     buttons[#buttons + 1] = {
         { text = "Close reader", callback = function()
             closeDialog()
