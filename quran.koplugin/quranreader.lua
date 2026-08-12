@@ -134,6 +134,13 @@ if not ok_rows then
     Rows = nil
 end
 
+-- Milestone 4. Same terms as quranrows: a failure here costs navigation, not
+-- reading, so the reader opens without it and says so when asked.
+local ok_nav, Nav = pcall(require, "qurannavigator")
+if not ok_nav then
+    Nav = nil
+end
+
 local ok_logger, logger = pcall(require, "logger")
 if not ok_logger then
     logger = nil
@@ -895,6 +902,97 @@ function Reader:applySetting(key, value)
     self:refreshFull()
 end
 
+-- Jumps to (surah, ayah), possibly in a different surah. Milestone 4.
+--
+-- The surah change is the part with teeth: ayah_count, both measurement caches
+-- and the saved position are all per-surah, so changing self.surah without
+-- them is how a reader ends up paging past the end of a short surah using the
+-- previous one's length. Order matters -- the OLD position is saved before
+-- self.surah moves, or it lands under the new surah's key.
+function Reader:goTo(surah, ayah)
+    if type(surah) ~= "number" or type(ayah) ~= "number" then
+        return
+    end
+    if self.laying_out then
+        return
+    end
+
+    if surah ~= self.surah then
+        -- Save where we were, under the surah we were in.
+        self:savePosition()
+
+        local count, err = DB.getSurahAyahCount(self.conn, surah)
+        if not count then
+            UIManager:show(InfoMessage:new{
+                text = "Qur'an: could not open surah " .. tostring(surah) ..
+                    "\n\n" .. tostring(err) .. "\n\nStaying where you were.",
+                show_icon = false,
+                dismissable = true,
+            })
+            return
+        end
+        self.surah = surah
+        self.ayah_count = count
+        if Settings then
+            Settings.setLastSurah(self.store, surah)
+        end
+        -- Both caches are keyed "surah:ayah" so stale entries could not be
+        -- returned for the new surah -- but they are also unbounded across a
+        -- session of jumping, and dropping them here is free.
+        self.line_count_cache = {}
+        self.row_cache = {}
+    end
+
+    if ayah < 1 then ayah = 1 end
+    if ayah > self.ayah_count then ayah = self.ayah_count end
+
+    self.top_ayah = ayah
+    self.top_line = 0
+    self:savePosition()
+    self:layoutPage()
+    self:refreshFull()
+end
+
+-- Opens the navigator from inside the reader, so a jump lands in the reader
+-- already open rather than closing and reopening it.
+function Reader:openNavigator(which)
+    if not Nav then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: qurannavigator.lua failed to load.\n\nSee crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+    -- Read fresh each time rather than cached on the reader: the navigator is
+    -- opened rarely, 114 short rows is cheap, and a cache would have to be
+    -- invalidated by nothing in particular.
+    local data, err = Nav.loadData(DB, self.conn)
+    if not data then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: " .. tostring(err),
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local opts = {
+        data = data,
+        initial = tostring(self.surah) .. ":" .. tostring(self.top_ayah),
+        on_pick = function(surah, ayah)
+            self:goTo(surah, ayah or 1)
+        end,
+    }
+    if which == "surah" then
+        Nav.showSurahList(opts)
+    elseif which == "juz" then
+        Nav.showJuzList(opts)
+    else
+        Nav.showReferenceInput(opts)
+    end
+end
+
 function Reader:openSettings()
     local ok_bd, ButtonDialog = pcall(require, "ui/widget/buttondialog")
     if not ok_bd or not ButtonDialog then
@@ -918,8 +1016,13 @@ function Reader:openSettings()
     local size_lim = Settings.LIMITS.arabic_font_size
     local leading_lim = Settings.LIMITS.arabic_line_height
 
-    local readout = "Surah " .. tostring(self.surah) .. " - ayah " .. tostring(self.top_ayah) ..
-        " - line " .. tostring(self.top_line)
+    -- The juz is looked up rather than tracked, so it cannot drift out of step
+    -- with the position. nil (an unreadable row) simply drops from the line.
+    local juz = DB.juzOf(self.conn, self.surah, self.top_ayah)
+    local readout = "Surah " .. tostring(self.surah) .. ":" .. tostring(self.top_ayah)
+    if juz then
+        readout = readout .. "  -  juz " .. tostring(juz)
+    end
 
     local dialog
     local function closeDialog()
@@ -994,14 +1097,38 @@ function Reader:openSettings()
             self.display_mode == "interleaved" and "arabic" or "interleaved")
     end } }
 
+    -- Navigation. Omitted entirely rather than shown inert if the module did
+    -- not load: three buttons that explain themselves once are better than
+    -- three that do nothing three times.
+    local nav_row = nil
+    if Nav then
+        nav_row = {
+            { text = "Surahs", callback = function()
+                closeDialog()
+                self:openNavigator("surah")
+            end },
+            { text = "Juz", callback = function()
+                closeDialog()
+                self:openNavigator("juz")
+            end },
+            { text = "Go to...", callback = function()
+                closeDialog()
+                self:openNavigator("reference")
+            end },
+        }
+    end
+
     local buttons = {
         { { text = readout } },
-        mode_row,
-        {
-            { text = "A -", callback = font_minus_cb },
-            { text = "Arabic " .. tostring(self.arabic_font_size) },
-            { text = "A +", callback = font_plus_cb },
-        },
+    }
+    if nav_row then
+        buttons[#buttons + 1] = nav_row
+    end
+    buttons[#buttons + 1] = mode_row
+    buttons[#buttons + 1] = {
+        { text = "A -", callback = font_minus_cb },
+        { text = "Arabic " .. tostring(self.arabic_font_size) },
+        { text = "A +", callback = font_plus_cb },
     }
     for _, row in ipairs(en_rows) do
         buttons[#buttons + 1] = row

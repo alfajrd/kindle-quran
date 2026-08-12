@@ -104,6 +104,42 @@ local function rowexecBound(conn, sql, ...)
     return res[1]
 end
 
+-- Runs a parameterised query and returns ALL rows, as an array of arrays.
+--
+-- rowexecBound above stops at the first row and first column, which is right
+-- for the single-value lookups the reader does. The navigator needs lists --
+-- 114 surahs, 30 juz -- and building those from 114 separate round trips
+-- would be the "load it a row at a time" mistake in a different costume.
+--
+-- `step()` returns a fresh row table each call and nil when exhausted. The
+-- statement is closed on every path, including error.
+local function execRows(conn, sql, ...)
+    local stmt = conn:prepare(sql)
+    local ok, rows = pcall(function(...)
+        if select("#", ...) > 0 then
+            stmt:bind(...)
+        end
+        local out = {}
+        while true do
+            local row = stmt:step()
+            if row == nil then
+                break
+            end
+            local copy = {}
+            for i = 1, #row do
+                copy[i] = row[i]
+            end
+            out[#out + 1] = copy
+        end
+        return out
+    end, ...)
+    pcall(function() stmt:close() end)
+    if not ok then
+        error(rows, 0)
+    end
+    return rows
+end
+
 -- Returns (text, nil) or (nil, err_string). err_string when the row is absent.
 function DB.getAyah(conn, surah, ayah)
     if not conn then
@@ -200,6 +236,92 @@ function DB.getSurahName(conn, surah, which)
         return nil, "DB.getSurahName: no row for surah " .. tostring(surah)
     end
     return value, nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Navigation (Milestone 4)
+-- ---------------------------------------------------------------------------
+
+-- Every surah, in order. -> (array of tables, nil) | (nil, err_string).
+--
+-- Read once when the navigator opens and held for as long as its menu is on
+-- screen. 114 rows of short strings is small enough to hold; the ayah text is
+-- what §10 forbids loading whole, and none of it is touched here.
+--
+-- `name_en` is the MEANING ("The Opening"); `name_tr` is the transliteration
+-- ("Al-Faatiha"). They are easy to mix up and the pack keeps them separate.
+function DB.listSurahs(conn)
+    if not conn then
+        return nil, "DB.listSurahs: no connection"
+    end
+    local ok, rows = pcall(function()
+        return execRows(conn,
+            "SELECT id, name_ar, name_en, name_tr, ayah_count, revelation, has_bismillah " ..
+            "FROM surah ORDER BY id;")
+    end)
+    if not ok then
+        return nil, "DB.listSurahs: " .. tostring(rows)
+    end
+    local out = {}
+    for _, r in ipairs(rows) do
+        out[#out + 1] = {
+            id = tonumber(r[1]),
+            name_ar = r[2],
+            name_en = r[3],
+            name_tr = r[4],
+            ayah_count = tonumber(r[5]),
+            revelation = r[6],
+            has_bismillah = tonumber(r[7]) == 1,
+        }
+    end
+    if #out == 0 then
+        return nil, "DB.listSurahs: the pack lists no surahs"
+    end
+    return out, nil
+end
+
+-- The first ayah of each juz. -> (array of {juz, surah, ayah}, nil) | (nil, err).
+--
+-- Deliberately 30 small LIMIT-1 queries rather than one clever GROUP BY.
+-- Getting "the first ayah of a group" out of SQLite in a single statement
+-- relies on bare-column-with-GROUP-BY picking a row from an ordered subquery,
+-- which is a SQLite implementation detail rather than a guarantee. A juz
+-- boundary that silently lands on the wrong ayah is precisely the kind of
+-- error nobody notices until they are reading, so this takes the obvious
+-- route and pays 30 indexed lookups once per navigator open.
+function DB.listJuz(conn)
+    if not conn then
+        return nil, "DB.listJuz: no connection"
+    end
+    local out = {}
+    for juz = 1, 30 do
+        local ok, rows = pcall(function()
+            return execRows(conn,
+                "SELECT surah, ayah FROM ayah WHERE juz = ? ORDER BY surah, ayah LIMIT 1;", juz)
+        end)
+        if not ok then
+            return nil, "DB.listJuz(" .. juz .. "): " .. tostring(rows)
+        end
+        if not rows[1] then
+            return nil, "DB.listJuz: the pack has no ayah in juz " .. juz
+        end
+        out[#out + 1] = { juz = juz, surah = tonumber(rows[1][1]), ayah = tonumber(rows[1][2]) }
+    end
+    return out, nil
+end
+
+-- -> juz number, or nil. Used to show where the reader currently is.
+function DB.juzOf(conn, surah, ayah)
+    if not conn then
+        return nil
+    end
+    local ok, juz = pcall(function()
+        return rowexecBound(conn, "SELECT juz FROM ayah WHERE surah = ? AND ayah = ?;", surah, ayah)
+    end)
+    if not ok then
+        return nil
+    end
+    return tonumber(juz)
 end
 
 -- ---------------------------------------------------------------------------

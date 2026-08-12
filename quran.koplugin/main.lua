@@ -47,16 +47,20 @@ if not ok_settings then
     Settings = nil
 end
 
--- Milestone 2 entry points are four hard-coded test surahs plus "last
--- position" -- see `.pipeline/spec.md` §5.1. Scaffolding. This is not a
--- navigator and must not grow into one -- the navigator is Milestone 3.
--- Delete this block when `navigator.lua` lands.
+-- Milestone 4. Losing this costs navigation, not reading: every entry point
+-- that needs it checks first and says so.
+local ok_nav, Nav = pcall(require, "qurannavigator")
+if not ok_nav then
+    Nav = nil
+end
+
+-- The four surahs the device checklists exercise. No longer menu entries --
+-- Milestone 4's navigator reaches all 114 -- but kept as the named reference
+-- for why these four keep appearing in docs/VERIFY-*.md:
 --   1   = shorter than one screen; the basmala-is-ayah-1 case.
 --   2   = long-surah paging; the 2:282 overflow case.
 --   9   = the no-basmala case (At-Tawbah).
 --   114 = last surah; end-of-pack boundary.
-local TEST_SURAHS = { 1, 2, 9, 114 }
-local TEST_SURAH_NAMES = { [1] = "Al-Fatihah", [2] = "Al-Baqara", [9] = "At-Tawbah", [114] = "An-Nas" }
 
 -- Reference of the verse shown. Latin, deliberately: orients the tester,
 -- who reads it before the Arabic renders.
@@ -138,19 +142,106 @@ function Quran:addToMainMenu(menu_items)
         callback = function() self:showPackSelfTest() end,
     }
 
-    -- Milestone 2: the reader. Five items -- "last position" plus the four
-    -- TEST_SURAHS -- per spec.md §5.1. Scaffolding, not a navigator.
     menu_items.quran_read_last = {
         text = _("Qur'an — read (last position)"),
         sorting_hint = "more_tools",
         callback = function() self:openReader(nil) end,
     }
-    for _, surah in ipairs(TEST_SURAHS) do
-        menu_items["quran_read_" .. surah] = {
-            text = _("Qur'an — read " .. TEST_SURAH_NAMES[surah] .. " (" .. surah .. ")"),
-            sorting_hint = "more_tools",
-            callback = function() self:openReader(surah) end,
-        }
+
+    -- Milestone 4 replaces the four hard-coded TEST_SURAHS entries that stood
+    -- in for navigation. They were scaffolding, and they were the reason a
+    -- verification step could name a surah the reader had no way to reach.
+    --
+    -- These open the reader at the chosen place rather than opening a picker
+    -- that then opens a reader: from a cold start the reader is what you want,
+    -- and the same three routes exist inside it for when it is already open.
+    menu_items.quran_surahs = {
+        text = _("Qur'an — surahs"),
+        sorting_hint = "more_tools",
+        callback = function() self:openNavigator("surah") end,
+    }
+    menu_items.quran_juz = {
+        text = _("Qur'an — juz"),
+        sorting_hint = "more_tools",
+        callback = function() self:openNavigator("juz") end,
+    }
+    menu_items.quran_goto = {
+        text = _("Qur'an — go to reference"),
+        sorting_hint = "more_tools",
+        callback = function() self:openNavigator("reference") end,
+    }
+end
+
+-- Navigation from the KOReader menu, with no reader open yet.
+--
+-- Reads the lists, CLOSES the connection, then shows the picker. A menu waits
+-- indefinitely for a tap and may be dismissed without choosing anything, so a
+-- connection held across it would be one nobody closes. openReader opens its
+-- own afterwards.
+function Quran:openNavigator(which)
+    if not ok_nav or not Nav then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: qurannavigator.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+    if not DB then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: db.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local dir, path_err = self:packPath()
+    if not dir then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: navigator error\n\n" .. tostring(path_err),
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local db_path = dir .. "/data/quran.db"
+    local conn, open_err = DB.open(db_path)
+    if not conn then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: pack error\n\n" .. tostring(open_err) .. "\n\nPath: " .. db_path,
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local data, data_err = Nav.loadData(DB, conn)
+    DB.close(conn)
+    if not data then
+        UIManager:show(InfoMessage:new{
+            text = "Qur'an: " .. tostring(data_err),
+            show_icon = false,
+            dismissable = true,
+        })
+        return
+    end
+
+    local opts = {
+        data = data,
+        initial = "",
+        on_pick = function(surah, ayah)
+            self:openReader(surah, ayah)
+        end,
+    }
+
+    if which == "surah" then
+        Nav.showSurahList(opts)
+    elseif which == "juz" then
+        Nav.showJuzList(opts)
+    else
+        Nav.showReferenceInput(opts)
     end
 end
 
@@ -412,7 +503,11 @@ function Quran:openTranslation(dir)
     return nil
 end
 
-function Quran:openReader(surah)
+-- `at_ayah` (Milestone 4) overrides the remembered position when the caller
+-- picked a specific place. Without it, opening surah 2 from the juz list would
+-- land wherever you last stopped in surah 2 rather than at the juz boundary
+-- you just chose -- the position memory quietly overruling the navigation.
+function Quran:openReader(surah, at_ayah)
     if not ok_reader or not Reader then
         UIManager:show(InfoMessage:new{
             text = "Qur'an: reader.lua failed to load.\n\nSee /mnt/us/koreader/crash.log",
@@ -488,6 +583,9 @@ function Quran:openReader(surah)
     local tconn = self:openTranslation(dir)
 
     local ayah, line = Settings.getPosition(store, target_surah)
+    if type(at_ayah) == "number" and at_ayah >= 1 then
+        ayah, line = at_ayah, 0
+    end
     Settings.setLastSurah(store, target_surah)
 
     local reader = Reader:new{

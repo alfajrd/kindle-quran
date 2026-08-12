@@ -32,6 +32,7 @@ CHECKS = []
 # expected to define them.
 MODULE_OWNERS = {
     "Rows": "quranrows.lua",
+    "Nav": "qurannavigator.lua",
     "DB": "db.lua",
     "Settings": "quransettings.lua",
     "TextMetrics": "quranreader.lua",
@@ -249,6 +250,67 @@ def check_m3_wiring(sources):
     record("X13", "RULE_GAP_FRACTION" not in rows,
            "quranrows.lua does not reuse the per-line rule tuning -- a row "
            "rule sits in a computed gutter and needs none")
+
+    check_m4_wiring(sources)
+
+
+def check_m4_wiring(sources):
+    """Milestone 4: the navigator."""
+    nav = sources.get("qurannavigator.lua", "")
+    reader = sources.get("quranreader.lua", "")
+    main = sources.get("main.lua", "")
+    db = sources.get("db.lua", "")
+
+    record("X14", bool(nav), "qurannavigator.lua exists")
+    record("X15",
+           "listSurahs" in db and "listJuz" in db and "juzOf" in db,
+           "db.lua exposes the surah list, the juz list and juz lookup")
+
+    # The navigator must take DATA, not a live connection: a menu waits
+    # indefinitely for a tap and may be dismissed, so a connection held across
+    # it is one nobody closes.
+    holds_conn = re.search(r"function\s+Nav\.show\w+\(opts\)(.{0,600}?)opts\.conn", nav, re.S)
+    record("X16", holds_conn is None,
+           "no Nav.show* function reads opts.conn -- pickers take data, so a "
+           "dismissed menu cannot leak a connection"
+           + ("" if holds_conn is None else "  -- opts.conn used in a show* function"))
+
+    # Every route that opens a picker must close its connection.
+    opens = main.count("DB.open(db_path)")
+    record("X17", "DB.close(conn)" in main and "Nav.loadData" in main,
+           "main.lua loads navigator data and closes its connection (%d open sites)" % opens)
+
+    # Jumping surahs must refresh the per-surah state; using the old
+    # ayah_count is how a reader pages past the end of a short surah.
+    goto = re.search(r"function\s+Reader:goTo\b(.*?)\nend\n", reader, re.S)
+    body = goto.group(1) if goto else ""
+    record("X18",
+           bool(goto) and "getSurahAyahCount" in body and "ayah_count" in body
+           and "line_count_cache" in body and "row_cache" in body,
+           "Reader:goTo re-reads ayah_count and drops both measurement caches "
+           "when the surah changes")
+
+    # The reference parser must anchor its patterns. Unanchored, "2:255x"
+    # silently becomes a jump to 2:255 instead of an error.
+    pats = re.findall(r'match\("([^"]+)"\)', nav)
+    unanchored = [p for p in pats if not (p.startswith("^") and p.endswith("$"))]
+    record("X19", pats and not unanchored,
+           "every reference-parser pattern is anchored (%d found), so trailing "
+           "junk is an error rather than a silent jump" % len(pats)
+           + ("" if not unanchored else "  -- UNANCHORED: %s" % unanchored))
+
+    # An explicit destination must beat the remembered position, or picking a
+    # juz boundary would land wherever you last stopped in that surah.
+    #
+    # Checks the ASSIGNMENT, not the mention. The first version of this check
+    # tested `"at_ayah" in main`, which the parameter name and a comment
+    # satisfied on their own -- it passed with the override disabled.
+    override = re.search(
+        r"if\s+type\(at_ayah\)\s*==\s*\"number\".*?\n\s*ayah,\s*line\s*=\s*at_ayah\s*,\s*0",
+        main, re.S)
+    record("X20", override is not None,
+           "an explicit destination actually overrides position memory "
+           "(the assignment, not just the parameter)")
 
 
 def main():
