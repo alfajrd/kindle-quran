@@ -142,6 +142,18 @@ Getting them wrong is immediately visible to anyone who knows the text.
 - **Bismillah.** Every surah opens with it *except* At-Tawbah (9). In
   Al-Fātiḥah (1) it is **ayah 1**, not a heading. Everywhere else it is a
   heading and must not be numbered. Hard-code this; do not infer it.
+
+  **The data does not arrive in that shape.** Established 12 August 2026: the
+  Tanzil corpus stores the basmala as a **prefix inside ayah 1** for all 113
+  surahs that have one, while the translation pack stores it as a **separate
+  ayah 0**. So the reader must split the prefix off for surahs 2–114 (except 9)
+  and render it as the heading this rule requires.
+
+  That split is a **deletion at a verified offset**, never a search-and-replace:
+  the prefix is asserted byte-identical to Al-Fātiḥah's ayah 1, which is read
+  from the pack rather than written down anywhere. `tools/check_alignment.py`
+  proves the precondition holds across all 114 surahs before any of it runs —
+  same discipline `docs/ERRATA.md` imposes, and for the same reason.
 - **Ayah markers.** Use U+06DD with the Arabic-Indic ayah number — never a
   Latin numeral inside Arabic text.
 - **Sajdah.** 15 verses carry a prostration mark. Flag them in the data and
@@ -345,6 +357,16 @@ The two columns have opposite paragraph direction. Set each cell's direction
 explicitly rather than relying on `auto_para_direction` to infer it — an ayah
 whose translation opens with a digit ("39.") is exactly the case where
 detection is least reliable.
+
+#### The basmala row
+
+Not a row. It is a **heading spanning both columns**, above the first row of
+every surah but 1 and 9 — see §6, which also records why the two packs disagree
+about where it lives and how the split is made safe.
+
+Getting this wrong is not subtle: the Arabic cell of the first row would carry
+the basmala while the English cell did not, in 112 surahs. `check_alignment.py`
+is the guard, and it must pass before any pack pair is used.
 
 #### Position memory
 

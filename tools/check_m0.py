@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -133,6 +134,19 @@ def check_s2(root):
 
 
 ALLOWED_DB_PATH = os.path.join("quran.koplugin", "data", "quran.db")
+# A translation pack is built locally and never committed: .gitignore blocks
+# `translations/*.db`, and S4 proves none is tracked. So one may legitimately
+# EXIST on a developer's disk, which S3 must not report as a misplaced binary.
+#
+# The file being present and the file being committed are different facts, and
+# only the second is a defect. Conflating them would push whoever hits this
+# into deleting their own pack, or worse, into loosening the check that
+# actually matters.
+TRANSLATIONS_DIR = "translations"
+
+
+def _rel_posix(rel):
+    return rel.replace(chr(92), "/")
 
 
 def check_s3(root):
@@ -141,8 +155,10 @@ def check_s3(root):
     # New, OFL 1.1, picked by eye on the device), so a vendored face under
     # fonts/ is now expected. Elsewhere it still means a binary landed where it
     # should not. SQLite belonged to Milestone 1, and Milestone 1 has arrived --
-    # one pack, one place: quran.koplugin/data/quran.db is now allowed, and it
-    # is the only .db path this check will not flag.
+    # one pack, one place: quran.koplugin/data/quran.db.
+    #
+    # Milestone 3 adds a second legitimate .db location, translations/, on the
+    # never-committed terms described above.
     offenders = []
     for path in iter_all_files(root):
         rel = os.path.relpath(path, root)
@@ -150,16 +166,59 @@ def check_s3(root):
         if ext.lower() not in FORBIDDEN_EXTENSIONS:
             continue
         if ext.lower() == ".db":
-            if rel != ALLOWED_DB_PATH:
-                offenders.append(rel)
+            if rel == ALLOWED_DB_PATH:
+                continue
+            if os.path.dirname(_rel_posix(rel)) == TRANSLATIONS_DIR:
+                continue
+            offenders.append(rel)
             continue
-        if os.path.dirname(rel).replace(chr(92), "/") != "fonts":
+        if os.path.dirname(_rel_posix(rel)) != "fonts":
             offenders.append(rel)
     check_boolean(
         "S3",
         not offenders,
-        "fonts only under fonts/; the one allowed pack is quran.koplugin/data/quran.db",
+        "fonts only under fonts/; .db only at %s or under %s/"
+        % (_rel_posix(ALLOWED_DB_PATH), TRANSLATIONS_DIR),
         "misplaced binary/forbidden file(s): " + ", ".join(offenders),
+    )
+
+
+def check_s4(root):
+    """No translation pack is tracked by git.
+
+    This is the check S3 stopped making, and the one that matters. A
+    translation pack on disk is fine; a translation pack in a public
+    repository's permanent history is a redistribution nobody authorised, and
+    deleting it in a later commit does not undo it.
+
+    Asks git rather than trusting .gitignore, because an ignore rule proves
+    nothing about a file that was force-added or staged before the rule
+    existed. If git is unavailable the check reports FAIL rather than passing
+    silently -- an unverifiable claim about redistribution is not a pass.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "--", "%s/" % TRANSLATIONS_DIR],
+            capture_output=True, text=True, timeout=30,
+        )
+        available = out.returncode == 0
+        tracked = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+    except (OSError, subprocess.SubprocessError):
+        available, tracked = False, []
+
+    if not available:
+        check_boolean("S4", False,
+                      "no translation pack is tracked by git",
+                      "could not run `git ls-files` to verify")
+        return
+
+    packs = [p for p in tracked if p.lower().endswith((".db", ".sqlite", ".sqlite3"))]
+    check_boolean(
+        "S4",
+        not packs,
+        "no translation pack is tracked by git (%d file(s) tracked under %s/)"
+        % (len(tracked), TRANSLATIONS_DIR),
+        "TRACKED PACK(S) -- this is redistribution: " + ", ".join(packs),
     )
 
 
@@ -803,6 +862,7 @@ def main():
     check_s1(root)
     check_s2(root)
     check_s3(root)
+    check_s4(root)
 
     check_e1(root)
     check_e2(root)
