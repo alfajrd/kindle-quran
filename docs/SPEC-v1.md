@@ -290,6 +290,36 @@ ruled out for a KindleForge release — see `THIRD-PARTY.md`.
 after comparing 26/30/34/38/44. Harakat clear the line above at that size.
 This is a Paperwhite 11 number; a 167 ppi device will want its own.
 
+**Re-confirmed at 34 px in the interleaved column**, 12 August 2026 — the
+open question in §9.1 ("chosen at full width, re-judge it in 562 px") is
+answered: it did not need to change.
+
+**Interleaved leading: settled at 0.9** (`rows_line_height`), tuned live on
+device the same day. Measured geometry at 34 px on a PW11: the face scales to
+~71 px, so
+
+| leading | line pitch | Arabic lines per page |
+|---|---|---|
+| 0.3 | 92 px | 17 |
+| **0.9** | **135 px** | **11** |
+| 1.5 | 178 px | 8 |
+
+It shipped at 0.3 on the argument that the leading existed only to clear the
+per-line rules, which interleaved mode does not have. That argument was right
+about the rules and wrong about legibility: **Arabic with stacked harakat needs
+the room whether or not anything is drawn in it.** Six lines a page is the
+price.
+
+Note where it landed — 0.9 is exactly what this section's "1.9 × line height"
+maps to, and the value the project shipped before 1.5 was reached for to cure
+the rule clipping. That cure failed and was replaced by measuring the gap. The
+eye came back to the spec's original number.
+
+Consequence for Arabic-only mode: its `arabic_line_height` is still 1.5, and on
+this evidence is too large. It is deliberately unchanged — that mode has not
+been read on device since, and still carries the `top_line_num` defect, so its
+typography cannot be judged until its paging works.
+
 ### 9.1 Interleaved layout — side-by-side ayah rows (Milestone 3)
 
 Decided 11 August 2026 from a reference screenshot, and confirmed side-by-side

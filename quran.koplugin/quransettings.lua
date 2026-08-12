@@ -65,7 +65,7 @@ Settings.SETTINGS_VERSION = 1
 -- If 34 proves too large there, lower it in the reader rather than changing
 -- this default, which Arabic-only mode still depends on.
 -- `rows_line_height` is the Arabic leading in INTERLEAVED mode, and it is
--- deliberately far smaller than `arabic_line_height`.
+-- deliberately smaller than `arabic_line_height`.
 --
 -- The 1.5 above exists to open a gap wide enough for the per-line rules to sit
 -- in without clipping harakat. Interleaved mode has no per-line rules -- its
@@ -74,8 +74,21 @@ Settings.SETTINGS_VERSION = 1
 -- to ~71 px on a 300 ppi screen, and 1.5 leading makes the line pitch 178 px,
 -- so only EIGHT Arabic lines fit a 1588 px column. 2:282 needed five pages and
 -- 2:283 rendered five lines above half a blank screen.
+--
+-- **0.9 is device-chosen**, 12 August 2026, tuned live at 34 px against the
+-- 562 px column: pitch 135 px, eleven lines to a page. It was shipped at 0.3
+-- (seventeen lines) on the reasoning that the leading was pure waste here --
+-- which was true of the RULES argument and false about legibility. Arabic with
+-- stacked harakat needs the room whether or not anything is drawn in it.
+--
+-- Note where it landed. 0.9 is what SPEC-v1 §9's "1.9x line height" maps to,
+-- and it is the value this project shipped before 1.5 was reached for to cure
+-- the rule clipping -- a cure that did not work and was later replaced by
+-- measuring the gap (RULE_GAP_FRACTION). So the eye came back to the number
+-- the spec started with, and 1.5 now looks like a workaround for a bug that
+-- has since been fixed properly. See the note on arabic_line_height below.
 Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5,
-                      rows_line_height = 0.3,
+                      rows_line_height = 0.9,
                       english_font_size = 22, english_line_height = 0.5,
                       rules_enabled = true, display_mode = "arabic" }
 Settings.LIMITS   = { arabic_font_size    = { min = 26, max = 60,  step = 2   },
@@ -83,6 +96,21 @@ Settings.LIMITS   = { arabic_font_size    = { min = 26, max = 60,  step = 2   },
                       rows_line_height    = { min = 0.1, max = 1.2, step = 0.1 },
                       english_font_size   = { min = 16, max = 40,  step = 2   },
                       english_line_height = { min = 0.3, max = 1.2, step = 0.1 } }
+
+-- On `arabic_line_height = 1.5`, which is Arabic-only mode's leading.
+--
+-- It is very probably too large, for the reason above: it was raised from 0.9
+-- to 1.5 on 11 August 2026 to widen the gap the per-line rules sit in, after
+-- the rules were seen clipping harakat. That did not work -- the extra leading
+-- landed above the glyphs, not below -- and the real fix was to measure the
+-- gap and place the rule proportionally inside it (quranreader.lua's
+-- RULE_GAP_FRACTION, commit 358d45c). The 1.5 was never reverted.
+--
+-- Deliberately NOT changed here. Arabic-only mode has not been read on device
+-- since, and it still carries the top_line_num defect described in
+-- quranrows.lua's V41 note, so its typography cannot be judged until its
+-- paging works. Revisit both together; do not "tidy" this to 0.9 on the
+-- strength of the interleaved result alone.
 
 -- The two pagination models (docs/BACKLOG.md B1). Anything else read from the
 -- settings file falls back to the default rather than being passed through --
