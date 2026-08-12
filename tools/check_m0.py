@@ -91,6 +91,7 @@ EXPECTED_KOPLUGIN_FILES = {
     "db.lua",
     "quranreader.lua",
     "quransettings.lua",
+    "quranrows.lua",
     os.path.join("data", "2_255.txt"),
     os.path.join("data", "2_255.sha256"),
     os.path.join("data", "SOURCE.md"),

@@ -365,6 +365,53 @@ end
 -- the Reader, and shows it -- see §5.2. If anything along the way fails,
 -- it shows the same style of path-naming InfoMessage the M0/M1 entry
 -- points already use, and never shows the reader.
+-- Where a side-loaded translation pack may live, most specific first.
+--
+-- `translation.db` beside the Qur'an pack is the simple case. The settings
+-- directory is the durable one: `quran.koplugin/` may sit on a read-only
+-- mount and is replaced wholesale on upgrade, so a pack left there would be
+-- lost -- the same reasoning that put the settings file there (D3).
+function Quran:translationPaths(dir)
+    local paths = { dir .. "/data/translation.db" }
+    local ok_ds, DataStorage = pcall(require, "datastorage")
+    if ok_ds and DataStorage then
+        local ok_dir, sdir = pcall(function() return DataStorage:getSettingsDir() end)
+        if ok_dir and sdir and sdir ~= "" then
+            paths[#paths + 1] = sdir .. "/quran-translation.db"
+        end
+    end
+    return paths
+end
+
+-- Returns a connection, or nil. Absence is normal and silent: a reader with no
+-- translation installed has not made a mistake, and an InfoMessage on every
+-- launch telling them so would be noise. A pack that EXISTS but fails to open
+-- is different -- that is a real fault and it is reported.
+function Quran:openTranslation(dir)
+    if not DB then
+        return nil
+    end
+    for _, path in ipairs(self:translationPaths(dir)) do
+        local f = io.open(path, "r")
+        if f then
+            f:close()
+            local tconn, err = DB.openTranslation(path)
+            if tconn then
+                return tconn
+            end
+            UIManager:show(InfoMessage:new{
+                text = "Qur'an: a translation pack is present but could not be opened.\n\n" ..
+                    tostring(err) .. "\n\nPath: " .. path ..
+                    "\n\nReading continues in Arabic only.",
+                show_icon = false,
+                dismissable = true,
+            })
+            return nil
+        end
+    end
+    return nil
+end
+
 function Quran:openReader(surah)
     if not ok_reader or not Reader then
         UIManager:show(InfoMessage:new{
@@ -431,22 +478,38 @@ function Quran:openReader(surah)
         return
     end
 
+    -- The translation pack is OPTIONAL and never fatal. It is side-loaded, so
+    -- most installs will not have one, and the reader must open regardless --
+    -- quranreader.lua's resolveMode degrades to Arabic-only and says why.
+    --
+    -- Looked for beside the Qur'an pack under data/, and in KOReader's own
+    -- settings directory, so a reader can drop one in without touching the
+    -- plugin directory (which may be read-only, and is replaced on upgrade).
+    local tconn = self:openTranslation(dir)
+
     local ayah, line = Settings.getPosition(store, target_surah)
     Settings.setLastSurah(store, target_surah)
 
     local reader = Reader:new{
         conn = conn,
+        tconn = tconn,
         store = store,
         surah = target_surah,
         ayah = ayah,
         line = line,
         on_close = function()
             DB.close(conn)
+            if tconn then
+                DB.close(tconn)
+            end
             Settings.close(store)
         end,
     }
 
     if not reader.init_ok then
+        if tconn then
+            DB.close(tconn)
+        end
         -- quranreader.lua already showed a specific InfoMessage explaining why
         -- (edge cases 16-19). Reader:onCloseWidget() will never run for a
         -- reader that was never shown, so this function must release the

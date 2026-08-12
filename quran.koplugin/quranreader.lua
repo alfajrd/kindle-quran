@@ -126,6 +126,14 @@ if not ok_bb then
     Blitbuffer = nil
 end
 
+-- Interleaved mode only. A failure here is not fatal: the reader falls back to
+-- Arabic-only and says so, rather than refusing to open. Losing the
+-- translation is a degraded read; losing the Qur'an is not a read at all.
+local ok_rows, Rows = pcall(require, "quranrows")
+if not ok_rows then
+    Rows = nil
+end
+
 local ok_logger, logger = pcall(require, "logger")
 if not ok_logger then
     logger = nil
@@ -398,6 +406,62 @@ function Reader:failInit(message)
     })
 end
 
+-- Decides which pagination model this session actually runs, and gathers what
+-- the interleaved one needs.
+--
+-- Interleaved is a REQUEST, not a guarantee. It needs quranrows.lua to have
+-- loaded, a translation pack to be open, and that pack to name itself. Any of
+-- those missing degrades to Arabic-only with a reason recorded -- never a
+-- refusal to open. A reader whose translation pack is missing should still be
+-- able to read the Qur'an.
+--
+-- `self.mode` is what the reader runs; `self.display_mode` stays the reader's
+-- stated preference, so plugging the pack back in restores interleaved without
+-- them having to ask for it again.
+function Reader:resolveMode()
+    self.mode = "arabic"
+    self.mode_fallback = nil
+
+    if self.display_mode ~= "interleaved" then
+        return
+    end
+    if not Rows then
+        self.mode_fallback = "quranrows.lua failed to load"
+        return
+    end
+    if not self.tconn then
+        self.mode_fallback = "no translation pack is installed"
+        return
+    end
+
+    local trans_id, id_err = DB.getTransId(self.tconn)
+    if not trans_id then
+        self.mode_fallback = tostring(id_err)
+        return
+    end
+    self.trans_id = trans_id
+
+    -- The basmala the heading is drawn from, and the prefix ayah 1 is stripped
+    -- of. Read from the packs, never written down -- see Rows.stripBasmala.
+    local bas_ar = DB.getAyah(self.conn, 1, 1)
+    if not bas_ar then
+        self.mode_fallback = "could not read the basmala (1:1) from the pack"
+        return
+    end
+    self.basmala_ar = bas_ar
+    -- Surah 2 is used only because it is the first surah that HAS a separate
+    -- basmala row; the text is identical across all 112, which
+    -- tools/check_alignment.py A7 asserts. A pack without it simply renders
+    -- the Arabic heading alone.
+    self.basmala_en = DB.getTranslation(self.tconn, trans_id, 2, 0)
+
+    self.mode = "interleaved"
+end
+
+function Reader:isInterleaved()
+    return self.mode == "interleaved" and Rows ~= nil
+end
+
 -- Recomputes text_width/text_height/px_per_line/lines_per_screen from the
 -- current screen size and typography. Reads W/H fresh every time (edge
 -- case 28: never cache them at init). Returns true, or false if line
@@ -462,6 +526,17 @@ function Reader:computeGeometry()
     -- clamps to 1, so the reader degrades to one line per page instead of
     -- an infinite loop (edge case 3).
     self.lines_per_screen = math.max(1, math.floor(self.text_height / self.px_per_line))
+
+    -- The interleaved model needs its own column geometry. If it cannot be
+    -- measured, drop to Arabic-only rather than returning false: the Arabic
+    -- metrics above already succeeded, so the reader is still perfectly
+    -- capable of reading -- just not in two columns.
+    if self:isInterleaved() then
+        if not Rows.computeGeometry(self) then
+            self.mode = "arabic"
+            self.mode_fallback = "column metrics unavailable at this font size"
+        end
+    end
     return true
 end
 
@@ -593,6 +668,12 @@ function Reader:layoutPage()
     self.page_widgets = {}
     self.page_group = nil
     self.ruled_page = nil
+    self.row_page = nil
+
+    if self:isInterleaved() then
+        self.laying_out = false
+        return self:layoutRowPage()
+    end
 
     -- STEP P2
     local page, next_a, next_l = self:buildPageFrom(self.top_ayah, self.top_line)
@@ -652,6 +733,43 @@ function Reader:layoutPage()
     -- (the caller -- init/applySetting/nextPage/prevPage -- decides full vs
     -- partial and calls Reader:refreshFull()/refreshTurn() itself, since
     -- only the caller knows *why* this layout happened.)
+end
+
+-- The interleaved counterpart of layoutPage. Same contract: builds the page
+-- description, turns it into widgets, records where the next page starts, and
+-- leaves the refresh to the caller.
+--
+-- `top_line` carries the sub-page ordinal here rather than a line ordinal --
+-- see quranrows.lua's buildPage. Both are "how far into top_ayah are we", so
+-- one saved position serves both models; what it MEANS differs, which is why
+-- a mode switch resets it to 0 rather than carrying it across.
+function Reader:layoutRowPage()
+    self.laying_out = true
+
+    local page, next_a, next_s = Rows.buildPage(self, self.top_ayah, self.top_line)
+    self.current_page = page
+    self.next_ayah = next_a
+    self.next_line = next_s
+
+    local widget, made, err = Rows.layout(self, page)
+    if made then
+        for _, w in ipairs(made) do
+            self.page_widgets[#self.page_widgets + 1] = w
+        end
+    end
+    if not widget then
+        self.laying_out = false
+        if err then
+            self:onDbError(err)
+        else
+            self:failInit("Qur'an reader: could not build the interleaved page layout.")
+            UIManager:close(self)
+        end
+        return
+    end
+
+    self.row_page = widget
+    self.laying_out = false
 end
 
 -- §6.8 Refresh policy. `refreshFull` is used for the first paint and any
@@ -715,7 +833,12 @@ function Reader:prevPage()
         })
         return
     end
-    local a, l = self:topOfPreviousPage(self.top_ayah, self.top_line)
+    local a, l
+    if self:isInterleaved() then
+        a, l = Rows.topOfPreviousPage(self, self.top_ayah, self.top_line)
+    else
+        a, l = self:topOfPreviousPage(self.top_ayah, self.top_line)
+    end
     self.top_ayah = a
     self.top_line = l
     self:savePosition()
@@ -735,12 +858,29 @@ function Reader:applySetting(key, value)
         self.arabic_font_size = Settings.get(self.store, key)
     elseif key == "arabic_line_height" then
         self.arabic_line_height = Settings.get(self.store, key)
+    elseif key == "english_font_size" then
+        self.english_font_size = Settings.get(self.store, key)
+    elseif key == "english_line_height" then
+        self.english_line_height = Settings.get(self.store, key)
     elseif key == "rules_enabled" then
         self.rules_enabled = Settings.get(self.store, key)
+    elseif key == "display_mode" then
+        self.display_mode = Settings.get(self.store, key)
+        self:resolveMode()
+        if self.mode_fallback then
+            UIManager:show(InfoMessage:new{
+                text = "Qur'an: staying in Arabic-only -- " .. tostring(self.mode_fallback),
+                show_icon = false,
+                dismissable = true,
+            })
+        end
     end
 
-    -- Clear the line-count cache: it was measured at the old typography.
+    -- Clear both caches: each was measured at the old typography, and a mode
+    -- switch invalidates them regardless since the measuring width changed
+    -- from full-width to a column.
     self.line_count_cache = {}
+    self.row_cache = {}
 
     if not self:computeGeometry() then
         self:failInit("Qur'an reader: line metrics became unavailable after a settings change")
@@ -815,6 +955,76 @@ function Reader:openSettings()
         end
     end
 
+    -- English controls only appear in interleaved mode: adjusting a face that
+    -- is not on screen is a button that appears to do nothing.
+    local en_lim = Settings.LIMITS.english_font_size
+    local en_rows = {}
+    if self:isInterleaved() then
+        local en_minus_cb = nil
+        if self.english_font_size > en_lim.min then
+            en_minus_cb = function()
+                closeDialog()
+                self:applySetting("english_font_size", self.english_font_size - en_lim.step)
+            end
+        end
+        local en_plus_cb = nil
+        if self.english_font_size < en_lim.max then
+            en_plus_cb = function()
+                closeDialog()
+                self:applySetting("english_font_size", self.english_font_size + en_lim.step)
+            end
+        end
+        en_rows[#en_rows + 1] = {
+            { text = "a -", callback = en_minus_cb },
+            { text = "English " .. tostring(self.english_font_size) },
+            { text = "a +", callback = en_plus_cb },
+        }
+    end
+
+    local mode_label
+    if self.mode_fallback then
+        -- Say why, rather than showing a toggle that silently does nothing.
+        mode_label = "Mode: Arabic only (" .. tostring(self.mode_fallback) .. ")"
+    else
+        mode_label = "Mode: " .. (self:isInterleaved() and "with translation" or "Arabic only")
+    end
+    local mode_row = { { text = mode_label, callback = function()
+        closeDialog()
+        self:applySetting("display_mode",
+            self.display_mode == "interleaved" and "arabic" or "interleaved")
+    end } }
+
+    local buttons = {
+        { { text = readout } },
+        mode_row,
+        {
+            { text = "A -", callback = font_minus_cb },
+            { text = "Arabic " .. tostring(self.arabic_font_size) },
+            { text = "A +", callback = font_plus_cb },
+        },
+    }
+    for _, row in ipairs(en_rows) do
+        buttons[#buttons + 1] = row
+    end
+    buttons[#buttons + 1] = {
+        { text = "Leading -", callback = leading_minus_cb },
+        { text = "Line " .. string.format("%.2f", self.arabic_line_height) },
+        { text = "Leading +", callback = leading_plus_cb },
+    }
+    buttons[#buttons + 1] = {
+        { text = "Rules: " .. (self.rules_enabled and "on" or "off"), callback = function()
+            closeDialog()
+            self:applySetting("rules_enabled", not self.rules_enabled)
+        end },
+    }
+    buttons[#buttons + 1] = {
+        { text = "Close reader", callback = function()
+            closeDialog()
+            UIManager:close(self)
+        end },
+        { text = "Cancel", callback = closeDialog },
+    }
+
     -- V29's claim (a callback-less button renders inert) is about
     -- construction/runtime behaviour, not the require above -- wrap the
     -- construction and show separately in `pcall` too, so a wrong claim
@@ -822,32 +1032,7 @@ function Reader:openSettings()
     -- input-event handler.
     local ok_new, dialog_or_err = pcall(function()
         return ButtonDialog:new{
-            buttons = {
-                { { text = readout } },
-                {
-                    { text = "A -", callback = font_minus_cb },
-                    { text = "Arabic " .. tostring(self.arabic_font_size) },
-                    { text = "A +", callback = font_plus_cb },
-                },
-                {
-                    { text = "Leading -", callback = leading_minus_cb },
-                    { text = "Line " .. string.format("%.2f", self.arabic_line_height) },
-                    { text = "Leading +", callback = leading_plus_cb },
-                },
-                {
-                    { text = "Rules: " .. (self.rules_enabled and "on" or "off"), callback = function()
-                        closeDialog()
-                        self:applySetting("rules_enabled", not self.rules_enabled)
-                    end },
-                },
-                {
-                    { text = "Close reader", callback = function()
-                        closeDialog()
-                        UIManager:close(self)
-                    end },
-                    { text = "Cancel", callback = closeDialog },
-                },
-            },
+            buttons = buttons,
         }
     end)
     if not ok_new or not dialog_or_err then
@@ -923,6 +1108,7 @@ function Reader:onCloseWidget()
     self.page_widgets = nil
     self.page_group = nil
     self.ruled_page = nil
+    self.row_page = nil
 
     if self.on_close then
         self.on_close()
@@ -938,7 +1124,9 @@ function Reader:paintTo(bb, x, y)
         local w, h = Screen:getWidth(), Screen:getHeight()
         pcall(function() bb:paintRect(x, y, w, h, Blitbuffer.COLOR_WHITE) end)
     end
-    if self.ruled_page then
+    if self.row_page then
+        self.row_page:paintTo(bb, x + SIDE_MARGIN_PX, y + TOP_MARGIN_PX)
+    elseif self.ruled_page then
         self.ruled_page:paintTo(bb, x + SIDE_MARGIN_PX, y + TOP_MARGIN_PX)
     end
 end
@@ -969,7 +1157,23 @@ function Reader:init()
 
     self.arabic_font_size = Settings.get(self.store, "arabic_font_size")
     self.arabic_line_height = Settings.get(self.store, "arabic_line_height")
+    self.english_font_size = Settings.get(self.store, "english_font_size")
+    self.english_line_height = Settings.get(self.store, "english_line_height")
     self.rules_enabled = Settings.get(self.store, "rules_enabled")
+    self.display_mode = Settings.get(self.store, "display_mode")
+
+    -- Everything quranrows.lua needs from the reader, handed over explicitly
+    -- rather than reached for. It keeps the module's dependencies visible in
+    -- one place, and keeps the TextBoxWidget internals behind the single
+    -- TextMetrics wrapper that carries their presence tests.
+    self.DB = DB
+    self.TextMetrics = TextMetrics
+    self.ARABIC_FONT = ARABIC_FONT
+    self.ayahDisplayText = ayahDisplayText
+    self.ayahMarker = ayahMarker
+    self.row_cache = {}
+
+    self:resolveMode()
 
     local ayah_count, err = DB.getSurahAyahCount(self.conn, self.surah)
     if not ayah_count then
@@ -999,10 +1203,22 @@ function Reader:init()
         return
     end
 
-    -- Clamp `line` against the ayah's *current* line count (edge case 11).
-    local line_count = self:linesOf(ayah)
-    if line >= line_count then
-        line = math.max(0, line_count - 1)
+    -- Clamp `line` against the ayah's *current* subdivision count (edge case
+    -- 11). The two models count different things -- lines of Arabic, versus
+    -- sub-pages of a row -- so each clamps against its own, and a position
+    -- saved in one mode lands somewhere valid in the other rather than out of
+    -- range. It may not land on the same screenful; it always lands in the
+    -- right ayah, which is what §9.1 promises.
+    if self:isInterleaved() then
+        local subs = Rows.subPageCount(self, ayah)
+        if line >= subs then
+            line = math.max(0, subs - 1)
+        end
+    else
+        local line_count = self:linesOf(ayah)
+        if line >= line_count then
+            line = math.max(0, line_count - 1)
+        end
     end
     self.top_ayah = ayah
     self.top_line = line

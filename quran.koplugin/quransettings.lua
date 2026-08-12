@@ -53,9 +53,29 @@ Settings.SETTINGS_VERSION = 1
 -- "1.9 x line height" therefore maps to `line_height = 0.9`, and the 1.7x
 -- floor to `0.7`. Do not "correct" this back to 1.9 -- that would be the
 -- raw multiplier, not the extra-leading value TextBoxWidget actually wants.
-Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5, rules_enabled = true }
-Settings.LIMITS   = { arabic_font_size   = { min = 26, max = 60,  step = 2   },
-                      arabic_line_height = { min = 0.7, max = 2.0, step = 0.1 } }
+-- Milestone 3 adds the English pair and the display mode.
+--
+-- English defaults are SPEC-v1 §9's (22 px, 1.5x leading -> line_height 0.5).
+-- They are separate keys, not a ratio of the Arabic ones, because a reader
+-- wanting large Arabic rarely wants equally large English -- which is exactly
+-- what the interleaved layout makes visible, since both appear at once.
+--
+-- Note the Arabic default was chosen on device at FULL width. Interleaved mode
+-- gives it a ~562 px column on a PW11, where it wraps roughly twice as often.
+-- If 34 proves too large there, lower it in the reader rather than changing
+-- this default, which Arabic-only mode still depends on.
+Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5,
+                      english_font_size = 22, english_line_height = 0.5,
+                      rules_enabled = true, display_mode = "arabic" }
+Settings.LIMITS   = { arabic_font_size    = { min = 26, max = 60,  step = 2   },
+                      arabic_line_height  = { min = 0.7, max = 2.0, step = 0.1 },
+                      english_font_size   = { min = 16, max = 40,  step = 2   },
+                      english_line_height = { min = 0.3, max = 1.2, step = 0.1 } }
+
+-- The two pagination models (docs/BACKLOG.md B1). Anything else read from the
+-- settings file falls back to the default rather than being passed through --
+-- an unknown mode string would reach the reader as neither model.
+Settings.DISPLAY_MODES = { arabic = true, interleaved = true }
 
 local function clamp(value, lim)
     if value < lim.min then
@@ -120,9 +140,9 @@ function Settings.open()
     -- never delete the user's file.
     local version = ls_read(store, "settings_version")
     if version ~= Settings.SETTINGS_VERSION then
-        ls_save(store, "arabic_font_size", Settings.DEFAULTS.arabic_font_size)
-        ls_save(store, "arabic_line_height", Settings.DEFAULTS.arabic_line_height)
-        ls_save(store, "rules_enabled", Settings.DEFAULTS.rules_enabled)
+        for key, value in pairs(Settings.DEFAULTS) do
+            ls_save(store, key, value)
+        end
         ls_save(store, "settings_version", Settings.SETTINGS_VERSION)
     end
 
@@ -134,6 +154,12 @@ function Settings.get(store, key)
     local default = Settings.DEFAULTS[key]
     local raw = ls_read(store, key)
     if raw == nil or type(raw) ~= type(default) then
+        return default
+    end
+    -- An unrecognised display_mode is treated as absent. It cannot be clamped
+    -- into range like a number, and passing it through would leave the reader
+    -- in neither pagination model.
+    if key == "display_mode" and not Settings.DISPLAY_MODES[raw] then
         return default
     end
     local lim = Settings.LIMITS[key]

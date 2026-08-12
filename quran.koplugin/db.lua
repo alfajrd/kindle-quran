@@ -202,6 +202,115 @@ function DB.getSurahName(conn, surah, which)
     return value, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Translation packs (Milestone 3)
+-- ---------------------------------------------------------------------------
+--
+-- A translation lives in its OWN database file, opened on its own connection.
+-- It is not a table in quran.db and must not become one: the Arabic is settled
+-- and committed, translations are per-reader, licence-bound and side-loaded
+-- (docs/BACKLOG.md B1), and a reader may legitimately have none. Keeping them
+-- apart is what lets the pack be absent, replaced, or refused without the
+-- scripture being affected.
+--
+-- Every function here tolerates `tconn == nil` and returns the same
+-- `(nil, err_string)` shape as the Arabic side, so "no translation installed"
+-- travels the ordinary error path instead of being a special case.
+
+-- Same read-only open as DB.open; separate name so a caller cannot confuse
+-- the two connections, which have different schemas.
+function DB.openTranslation(path)
+    return DB.open(path)
+end
+
+-- Returns (trans_id, nil) or (nil, err). Read from the pack rather than
+-- configured: the pack knows its own id, and a mismatch between a configured
+-- id and the rows' id would silently return no translation for every ayah.
+function DB.getTransId(tconn)
+    if not tconn then
+        return nil, "DB.getTransId: no connection"
+    end
+    local ok, value = pcall(function()
+        return rowexecBound(tconn, "SELECT value FROM trans_meta WHERE key = ?;", "trans_id")
+    end)
+    if not ok then
+        return nil, "DB.getTransId: " .. tostring(value)
+    end
+    if value == nil then
+        return nil, "DB.getTransId: pack has no trans_id in trans_meta"
+    end
+    return value, nil
+end
+
+function DB.getTransMeta(tconn, key)
+    if not tconn then
+        return nil
+    end
+    local ok, value = pcall(function()
+        return rowexecBound(tconn, "SELECT value FROM trans_meta WHERE key = ?;", key)
+    end)
+    if not ok then
+        return nil
+    end
+    return value
+end
+
+-- Returns (text, nil) or (nil, err_string).
+--
+-- Ayah 0 is the surah's basmala where the pack carries one separately -- see
+-- SPEC-v1 §6. A caller asking for it in surah 1 or 9 correctly gets "no row".
+function DB.getTranslation(tconn, trans_id, surah, ayah)
+    if not tconn then
+        return nil, "DB.getTranslation: no translation pack is open"
+    end
+    local ok, text = pcall(function()
+        return rowexecBound(tconn,
+            "SELECT text FROM translation WHERE trans_id = ? AND surah = ? AND ayah = ?;",
+            trans_id, surah, ayah)
+    end)
+    if not ok then
+        return nil, "DB.getTranslation(" .. tostring(surah) .. ":" .. tostring(ayah) ..
+            "): " .. tostring(text)
+    end
+    if text == nil then
+        return nil, "DB.getTranslation: no row for " .. tostring(surah) .. ":" .. tostring(ayah)
+    end
+    return text, nil
+end
+
+-- Returns the surah introduction, or nil when there is none.
+--
+-- Absence is NORMAL and is not an error: the table ships empty because the one
+-- translation known to carry intros is not distributable (docs/BACKLOG.md).
+-- Callers must render nothing rather than reporting a failure. A pack built
+-- before the table existed is also handled -- the query is pcall-guarded, so a
+-- missing table returns nil like a missing row.
+function DB.getSurahIntro(tconn, trans_id, surah)
+    if not tconn then
+        return nil
+    end
+    local ok, text = pcall(function()
+        return rowexecBound(tconn,
+            "SELECT text FROM trans_surah_intro WHERE trans_id = ? AND surah = ?;",
+            trans_id, surah)
+    end)
+    if not ok then
+        return nil
+    end
+    return text
+end
+
+-- Returns the number of translated verses, for the self-test. 0 on any failure.
+function DB.translationCount(tconn)
+    if not tconn then
+        return 0
+    end
+    local ok, n = pcall(function()
+        return tconn:rowexec("SELECT COUNT(*) FROM translation WHERE ayah > 0;")
+    end)
+    return (ok and tonumber(n)) or 0
+end
+
 function DB.close(conn)
     if conn then
         pcall(function() conn:close() end)
