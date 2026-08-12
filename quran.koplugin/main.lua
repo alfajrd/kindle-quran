@@ -123,6 +123,43 @@ function Quran:onDispatcherRegisterActions()
         title = _("Qur'an — read (last position)"),
         general = true,
     })
+    -- Milestone 4's routes, registered so each can be bound to a gesture.
+    --
+    -- A Dispatcher action is what makes a menu item reachable WITHOUT the
+    -- menu: KOReader's Gesture Manager can bind any of these to a tap,
+    -- swipe or corner, which turns "KUAL, KOReader, Tools, More tools,
+    -- Qur'an" into one gesture. Registering them costs nothing if unused --
+    -- an unbound action simply sits in the Gesture Manager's list.
+    Dispatcher:registerAction("quran_surahs", {
+        category = "none",
+        event = "QuranSurahs",
+        title = _("Qur'an — surahs"),
+        general = true,
+    })
+    Dispatcher:registerAction("quran_juz", {
+        category = "none",
+        event = "QuranJuz",
+        title = _("Qur'an — juz"),
+        general = true,
+    })
+    Dispatcher:registerAction("quran_goto", {
+        category = "none",
+        event = "QuranGoto",
+        title = _("Qur'an — go to reference"),
+        general = true,
+    })
+end
+
+function Quran:onQuranSurahs()
+    self:openNavigator("surah")
+end
+
+function Quran:onQuranJuz()
+    self:openNavigator("juz")
+end
+
+function Quran:onQuranGoto()
+    self:openNavigator("reference")
 end
 
 function Quran:init()
@@ -133,18 +170,18 @@ end
 function Quran:addToMainMenu(menu_items)
     menu_items.quran_test_ayah = {
         text = _("Qur'an — test ayah (2:255)"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:showTestAyah() end,
     }
     menu_items.quran_pack_self_test = {
         text = _("Qur'an — pack self-test"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:showPackSelfTest() end,
     }
 
     menu_items.quran_read_last = {
         text = _("Qur'an — read (last position)"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:openReader(nil) end,
     }
 
@@ -157,17 +194,17 @@ function Quran:addToMainMenu(menu_items)
     -- and the same three routes exist inside it for when it is already open.
     menu_items.quran_surahs = {
         text = _("Qur'an — surahs"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:openNavigator("surah") end,
     }
     menu_items.quran_juz = {
         text = _("Qur'an — juz"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:openNavigator("juz") end,
     }
     menu_items.quran_goto = {
         text = _("Qur'an — go to reference"),
-        sorting_hint = "more_tools",
+        sorting_hint = "tools",
         callback = function() self:openNavigator("reference") end,
     }
 end

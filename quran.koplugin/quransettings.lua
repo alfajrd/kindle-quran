@@ -75,20 +75,23 @@ Settings.SETTINGS_VERSION = 1
 -- so only EIGHT Arabic lines fit a 1588 px column. 2:282 needed five pages and
 -- 2:283 rendered five lines above half a blank screen.
 --
--- **0.9 is device-chosen**, 12 August 2026, tuned live at 34 px against the
--- 562 px column: pitch 135 px, eleven lines to a page. It was shipped at 0.3
--- (seventeen lines) on the reasoning that the leading was pure waste here --
--- which was true of the RULES argument and false about legibility. Arabic with
--- stacked harakat needs the room whether or not anything is drawn in it.
+-- **0.8 is device-chosen**, 12 August 2026, tuned live at 34 px against the
+-- 562 px column: pitch 128 px, twelve Arabic lines to a page. 0.9 was picked
+-- first and 0.8 preferred on a second look.
 --
--- Note where it landed. 0.9 is what SPEC-v1 §9's "1.9x line height" maps to,
--- and it is the value this project shipped before 1.5 was reached for to cure
--- the rule clipping -- a cure that did not work and was later replaced by
--- measuring the gap (RULE_GAP_FRACTION). So the eye came back to the number
--- the spec started with, and 1.5 now looks like a workaround for a bug that
--- has since been fixed properly. See the note on arabic_line_height below.
+-- It shipped at 0.3 (seventeen lines) on the reasoning that this leading was
+-- pure waste because there are no per-line rules here to clear. That was true
+-- of the RULES and false about legibility: Arabic with stacked harakat needs
+-- the room whether or not anything is drawn in it.
+--
+-- Note the neighbourhood it settled in. SPEC-v1 §9's "1.9x line height" maps
+-- to 0.9, which is what this project shipped before 1.5 was reached for to
+-- cure the rule clipping -- a cure that did not work and was later replaced by
+-- measuring the gap (RULE_GAP_FRACTION). So the eye came back to within a step
+-- of the number the spec started with, and 1.5 now looks like a workaround for
+-- a bug that has since been fixed properly. See the note below.
 Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5,
-                      rows_line_height = 0.9,
+                      rows_line_height = 0.8,
                       english_font_size = 22, english_line_height = 0.5,
                       rules_enabled = true, display_mode = "arabic" }
 Settings.LIMITS   = { arabic_font_size    = { min = 26, max = 60,  step = 2   },
