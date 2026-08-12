@@ -250,21 +250,40 @@ function Rows.metrics(self, ayah)
     return m
 end
 
--- How many pages an oversized row needs. 1 when it fits.
+-- How an oversized row is split. -> { total, per_ar, per_en }.
 --
--- Each column paginates independently against its own lines-per-page, and
--- sub-page k pairs Arabic lines [k*La+1 ..] with English lines [k*Le+1 ..].
--- The two cells drift apart within an oversized ayah -- unavoidable when one
--- language needs more lines than the other -- but both start together and
--- both end together, which is what a reader tracking a long ayah needs.
-function Rows.subPageCount(self, ayah)
+-- The page count is set by whichever column needs more pages at full page
+-- capacity. Each column's lines are then spread EVENLY across that shared
+-- count, rather than each column taking its own maximum every page.
+--
+-- Taking the maximum was the first implementation and it is wrong on device.
+-- Arabic wraps far more than English in a 562 px column, so on 2:282 the
+-- Arabic needed four pages and the English three -- and the English, having
+-- filled itself at full capacity, ran out. Page four rendered with a blank
+-- left column: Arabic alone, translation gone, on the one ayah most in need
+-- of it.
+--
+-- Dividing by `total` makes both columns finish on the last page. It cannot
+-- overflow: total >= ceil(n / lines_per_page) for each column by construction,
+-- so ceil(n / total) <= lines_per_page.
+function Rows.splitPlan(self, ayah)
     local m = Rows.metrics(self, ayah)
     if m.height + Rows.ROW_GAP_PX <= self.text_height then
-        return 1
+        return { total = 1, per_ar = m.n_ar, per_en = m.n_en }
     end
     local pages_ar = math.ceil(m.n_ar / self.lines_per_page_ar)
     local pages_en = math.ceil(m.n_en / self.lines_per_page_en)
-    return math.max(1, pages_ar, pages_en)
+    local total = math.max(1, pages_ar, pages_en)
+    return {
+        total = total,
+        per_ar = math.max(1, math.ceil(m.n_ar / total)),
+        per_en = math.max(1, math.ceil(m.n_en / total)),
+    }
+end
+
+-- How many pages an oversized row needs. 1 when it fits.
+function Rows.subPageCount(self, ayah)
+    return Rows.splitPlan(self, ayah).total
 end
 
 -- ---------------------------------------------------------------------------
@@ -465,15 +484,19 @@ function Rows.layout(self, page)
             local en = Rows.englishText(self, item.ayah)
             local m = Rows.metrics(self, item.ayah)
 
-            local first_ar = item.sub * self.lines_per_page_ar
-            local first_en = item.sub * self.lines_per_page_en
+            -- Both columns advance by their SHARE of the split, not by their
+            -- own page capacity, so neither runs out before the other and no
+            -- trailing page renders a blank column. See Rows.splitPlan.
+            local plan = Rows.splitPlan(self, item.ayah)
+            local first_ar = item.sub * plan.per_ar
+            local first_en = item.sub * plan.per_en
             local take_ar = m.n_ar - first_ar
             local take_en = m.n_en - first_en
             local h_ar, h_en, top_ar, top_en
 
             if item.of > 1 then
-                take_ar = math.max(0, math.min(take_ar, self.lines_per_page_ar))
-                take_en = math.max(0, math.min(take_en, self.lines_per_page_en))
+                take_ar = math.max(0, math.min(take_ar, plan.per_ar))
+                take_en = math.max(0, math.min(take_en, plan.per_en))
                 h_ar = take_ar > 0 and take_ar * self.row_pitch_ar or nil
                 h_en = take_en > 0 and take_en * self.row_pitch_en or nil
                 top_ar = first_ar + 1

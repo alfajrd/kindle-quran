@@ -1023,6 +1023,16 @@ function Reader:openSettings()
     if juz then
         readout = readout .. "  -  juz " .. tostring(juz)
     end
+    -- On a split ayah, say which part of it you are on. Without this the only
+    -- way to tell page 3 of 2:282 from page 4 is to read them, which is also
+    -- the only way to notice a split going wrong.
+    if self:isInterleaved() then
+        local ok_plan, plan = pcall(function() return Rows.splitPlan(self, self.top_ayah) end)
+        if ok_plan and plan and plan.total > 1 then
+            readout = readout .. "  (part " .. tostring((self.top_line or 0) + 1) ..
+                " of " .. tostring(plan.total) .. ")"
+        end
+    end
 
     local dialog
     local function closeDialog()

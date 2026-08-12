@@ -251,6 +251,21 @@ def check_m3_wiring(sources):
            "quranrows.lua does not reuse the per-line rule tuning -- a row "
            "rule sits in a computed gutter and needs none")
 
+    # An oversized ayah must advance both columns by their share of the split,
+    # never by each column's own page capacity. The latter lets the shorter
+    # column exhaust itself early and renders a trailing page with one column
+    # blank -- observed on 2:282, page 4, translation missing.
+    caps = re.findall(r"lines_per_page_(?:ar|en)", rows)
+    in_plan = re.search(r"function\s+Rows\.splitPlan\b(.*?)\nend\n", rows, re.S)
+    plan_caps = re.findall(r"lines_per_page_(?:ar|en)", in_plan.group(1) if in_plan else "")
+    setter = re.findall(r"self\.lines_per_page_(?:ar|en)\s*=", rows)
+    record("X21",
+           bool(in_plan) and len(caps) == len(plan_caps) + len(setter),
+           "lines_per_page_* is read only inside Rows.splitPlan -- the layout "
+           "advances columns by their share, so no trailing page can render a "
+           "blank column (%d reads, %d in splitPlan, %d assignments)"
+           % (len(caps), len(plan_caps), len(setter)))
+
     check_m4_wiring(sources)
 
 
