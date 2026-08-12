@@ -30,9 +30,19 @@ MUST-VERIFY (device)
       where detection is least reliable. If the key is ignored, the failure is
       visible (English right-aligned or Arabic laid out LTR) rather than
       silent, and `auto_para_direction` is the fallback.
-  V41 A `TextBoxWidget` given `height` shorter than its text renders the
-      window starting at `top_line_num` and clips the rest. Already relied on
-      by the Arabic-only pager (V25), reused here for oversized rows.
+  V41 DISPROVED ON DEVICE, 12 August 2026. `top_line_num` is IGNORED: two
+      boxes over the same text, asked to start at lines 1 and 4, both reported
+      virtual_line_num 1. Every sub-page of an oversized ayah rendered from
+      line one, so a long ayah repeated its opening lines page after page.
+      Oversized rows now scroll instead -- see Rows.sliceBox.
+
+      Note what made this survive so long. The claim said it was "already
+      relied on by the Arabic-only pager (V25)", which sounded like
+      corroboration and was an assumption: V25 had never been exercised
+      either, because the only surah read on device was Al-Fatiha and none of
+      its ayat is long enough to need slicing. **Arabic-only mode has the same
+      defect and it is not yet fixed** -- quranreader.lua's STEP P3 still
+      passes top_line_num.
   V42 Two `TextBoxWidget`s painted at different x within one parent do not
       interfere. Each owns its blitbuffer and blits opaquely (that opacity is
       what forced the paint-order fix in quranreader.lua), so the columns must
@@ -171,8 +181,73 @@ local function measureBox(self, text, face, width, line_height, rtl)
     return lines, pitch
 end
 
+-- The Arabic leading used HERE, which is not the one Arabic-only mode uses.
+--
+-- arabic_line_height is 1.5 because the per-line rules need a gap wide enough
+-- to sit in without clipping harakat. This layout has no per-line rules -- the
+-- rule is in the gutter below a whole row -- so that leading buys nothing and
+-- costs everything: measured on device, 34 px scales to a ~71 px face and 1.5
+-- leading gives a 178 px line pitch, eight lines to a 1588 px column.
+function Rows.arabicLeading(self)
+    return self.rows_line_height or 0.3
+end
+
 function Rows.arabicFace(self)
     return Font:getFace(self.ARABIC_FONT, self.arabic_font_size)
+end
+
+-- Builds a text box showing one sub-page's worth of an oversized cell.
+--
+-- `top_line_num` DOES NOT WORK. Probed on device (Rows.diagnostics): two boxes
+-- over the same text, asked to start at lines 1 and 4, both reported
+-- virtual_line_num 1. Every sub-page rendered from the first line and was
+-- clipped to the row height, so a long ayah showed its opening lines over and
+-- over. It was believed to work because the Arabic-only pager "relied on" it
+-- -- an assumption, never exercised, since the only surah read on device was
+-- Al-Fatiha and none of its ayat need slicing.
+--
+-- `scrollDown()` is the method actually built for this: it advances by one
+-- visible page and re-renders. Called `sub` times, it lands on sub-page `sub`.
+--
+-- Verified rather than trusted: after scrolling, virtual_line_num must have
+-- moved. If it has not, the box is returned anyway -- showing the first lines
+-- is wrong, but showing nothing is worse -- and the failure is recorded so
+-- diagnostics can report it instead of the reader silently lying.
+function Rows.sliceBox(self, opts)
+    local ok, box = pcall(function()
+        return TextBoxWidget:new{
+            text = opts.text,
+            face = opts.face,
+            width = opts.width,
+            height = opts.height,
+            line_height = opts.line_height,
+            alignment = opts.rtl and "right" or "left",
+            auto_para_direction = false,
+            para_direction_rtl = opts.rtl and true or false,
+        }
+    end)
+    if not ok or not box then
+        return nil
+    end
+
+    local sub = opts.sub or 0
+    if sub > 0 then
+        local before, after
+        pcall(function() before = box.virtual_line_num end)
+        pcall(function()
+            for _ = 1, sub do
+                box:scrollDown()
+            end
+        end)
+        pcall(function() after = box.virtual_line_num end)
+        if before and after and after > before then
+            self.slice_mechanism = "scrollDown"
+        else
+            self.slice_mechanism = "FAILED (" .. tostring(before) .. " -> " ..
+                tostring(after) .. ")"
+        end
+    end
+    return box
 end
 
 function Rows.englishFace(self)
@@ -188,7 +263,7 @@ function Rows.computeGeometry(self)
     end
 
     local _, pitch_ar = measureBox(self, "A", Rows.arabicFace(self), self.col_width,
-                                   self.arabic_line_height, true)
+                                   Rows.arabicLeading(self), true)
     local _, pitch_en = measureBox(self, "A", Rows.englishFace(self), self.col_width,
                                    self.english_line_height, false)
     if not pitch_ar or pitch_ar <= 0 or not pitch_en or pitch_en <= 0 then
@@ -219,7 +294,7 @@ function Rows.metrics(self, ayah)
     local n_ar = nil
     if ar then
         n_ar = measureBox(self, ar, Rows.arabicFace(self), self.col_width,
-                          self.arabic_line_height, true)
+                          Rows.arabicLeading(self), true)
     end
     local n_en = nil
     if en then
@@ -334,6 +409,9 @@ function Rows.diagnostics(self, ayah)
         add("  splitPlan FAILED: " .. tostring(plan))
     end
     add("  now on part " .. tostring((self.top_line or 0) + 1))
+    add("  leading " .. tostring(Rows.arabicLeading(self)) ..
+        " (arabic-only uses " .. tostring(self.arabic_line_height) .. ")")
+    add("  slicing: " .. tostring(self.slice_mechanism or "not used on part 1"))
 
     -- The probe. Two boxes over the same text, asking to start at different
     -- lines. If they agree, the key is being ignored.
@@ -351,7 +429,7 @@ function Rows.diagnostics(self, ayah)
                 face = Rows.arabicFace(self),
                 width = self.col_width,
                 height = 3 * (self.row_pitch_ar or 40),
-                line_height = self.arabic_line_height,
+                line_height = Rows.arabicLeading(self),
                 top_line_num = n,
                 alignment = "right",
                 auto_para_direction = false,
@@ -541,21 +619,21 @@ end
 function Rows.layout(self, page)
     local made = {}
 
-    local function box(text, face, width, line_height, rtl, height, top_line)
-        local ok, w = pcall(function()
-            return TextBoxWidget:new{
-                text = text,
-                face = face,
-                width = width,
-                height = height,
-                line_height = line_height,
-                top_line_num = top_line,
-                alignment = rtl and "right" or "left",
-                auto_para_direction = false,
-                para_direction_rtl = rtl and true or false,
-            }
-        end)
-        if not ok or not w then
+    -- `sub` is the sub-page to show, NOT a top_line_num: that key is ignored
+    -- by this KOReader build (proved by the probe in Rows.diagnostics), and
+    -- passing it produced an ayah that repeated its opening lines on every
+    -- page. Rows.sliceBox scrolls instead, and verifies that it moved.
+    local function box(text, face, width, line_height, rtl, height, sub)
+        local w = Rows.sliceBox(self, {
+            text = text,
+            face = face,
+            width = width,
+            height = height,
+            line_height = line_height,
+            rtl = rtl,
+            sub = sub,
+        })
+        if not w then
             return nil
         end
         made[#made + 1] = w
@@ -565,7 +643,7 @@ function Rows.layout(self, page)
     for _, item in ipairs(page.items) do
         if item.kind == "basmala" then
             item.ar = box(self.basmala_ar, Rows.arabicFace(self), self.text_width,
-                          self.arabic_line_height, true, nil, nil)
+                          Rows.arabicLeading(self), true, nil, nil)
             item.ar_h = self.row_pitch_ar
             if self.basmala_en and self.basmala_en ~= "" then
                 item.en = box(self.basmala_en, Rows.englishFace(self), self.text_width,
@@ -594,8 +672,10 @@ function Rows.layout(self, page)
                 take_en = math.max(0, math.min(take_en, plan.per_en))
                 h_ar = take_ar > 0 and take_ar * self.row_pitch_ar or nil
                 h_en = take_en > 0 and take_en * self.row_pitch_en or nil
-                top_ar = first_ar + 1
-                top_en = first_en + 1
+                -- The sub-page index, scrolled to. Not a line ordinal: see
+                -- the note on `box` above and Rows.sliceBox.
+                top_ar = item.sub
+                top_en = item.sub
                 item.height = math.max(h_ar or 0, h_en or 0)
             else
                 h_ar, h_en, top_ar, top_en = nil, nil, nil, nil
@@ -604,7 +684,7 @@ function Rows.layout(self, page)
 
             if take_ar > 0 then
                 item.ar = box(ar, Rows.arabicFace(self), self.col_width,
-                              self.arabic_line_height, true, h_ar, top_ar)
+                              Rows.arabicLeading(self), true, h_ar, top_ar)
             end
             if en and take_en > 0 then
                 item.en = box(en, Rows.englishFace(self), self.col_width,

@@ -64,11 +64,23 @@ Settings.SETTINGS_VERSION = 1
 -- gives it a ~562 px column on a PW11, where it wraps roughly twice as often.
 -- If 34 proves too large there, lower it in the reader rather than changing
 -- this default, which Arabic-only mode still depends on.
+-- `rows_line_height` is the Arabic leading in INTERLEAVED mode, and it is
+-- deliberately far smaller than `arabic_line_height`.
+--
+-- The 1.5 above exists to open a gap wide enough for the per-line rules to sit
+-- in without clipping harakat. Interleaved mode has no per-line rules -- its
+-- rule sits in the gutter below a whole row -- so that leading buys nothing
+-- there and costs a great deal. Measured on device: at 34 px the face scales
+-- to ~71 px on a 300 ppi screen, and 1.5 leading makes the line pitch 178 px,
+-- so only EIGHT Arabic lines fit a 1588 px column. 2:282 needed five pages and
+-- 2:283 rendered five lines above half a blank screen.
 Settings.DEFAULTS = { arabic_font_size = 34, arabic_line_height = 1.5,
+                      rows_line_height = 0.3,
                       english_font_size = 22, english_line_height = 0.5,
                       rules_enabled = true, display_mode = "arabic" }
 Settings.LIMITS   = { arabic_font_size    = { min = 26, max = 60,  step = 2   },
                       arabic_line_height  = { min = 0.7, max = 2.0, step = 0.1 },
+                      rows_line_height    = { min = 0.1, max = 1.2, step = 0.1 },
                       english_font_size   = { min = 16, max = 40,  step = 2   },
                       english_line_height = { min = 0.3, max = 1.2, step = 0.1 } }
 

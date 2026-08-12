@@ -869,6 +869,8 @@ function Reader:applySetting(key, value)
         self.english_font_size = Settings.get(self.store, key)
     elseif key == "english_line_height" then
         self.english_line_height = Settings.get(self.store, key)
+    elseif key == "rows_line_height" then
+        self.rows_line_height = Settings.get(self.store, key)
     elseif key == "rules_enabled" then
         self.rules_enabled = Settings.get(self.store, key)
     elseif key == "display_mode" then
@@ -1031,7 +1033,13 @@ function Reader:openSettings()
     end
 
     local size_lim = Settings.LIMITS.arabic_font_size
-    local leading_lim = Settings.LIMITS.arabic_line_height
+    -- Leading -/+ drives whichever leading is actually in use. Interleaved
+    -- mode has its own (rows_line_height) because it needs far less: no
+    -- per-line rules to clear. Adjusting the invisible one is a button that
+    -- appears to do nothing.
+    local leading_key = self:isInterleaved() and "rows_line_height" or "arabic_line_height"
+    local leading_lim = Settings.LIMITS[leading_key]
+    local leading_val = self:isInterleaved() and self.rows_line_height or self.arabic_line_height
 
     -- The juz is looked up rather than tracked, so it cannot drift out of step
     -- with the position. nil (an unreadable row) simply drops from the line.
@@ -1071,17 +1079,17 @@ function Reader:openSettings()
         end
     end
     local leading_minus_cb = nil
-    if self.arabic_line_height > leading_lim.min then
+    if leading_val > leading_lim.min then
         leading_minus_cb = function()
             closeDialog()
-            self:applySetting("arabic_line_height", self.arabic_line_height - leading_lim.step)
+            self:applySetting(leading_key, leading_val - leading_lim.step)
         end
     end
     local leading_plus_cb = nil
-    if self.arabic_line_height < leading_lim.max then
+    if leading_val < leading_lim.max then
         leading_plus_cb = function()
             closeDialog()
-            self:applySetting("arabic_line_height", self.arabic_line_height + leading_lim.step)
+            self:applySetting(leading_key, leading_val + leading_lim.step)
         end
     end
 
@@ -1162,7 +1170,7 @@ function Reader:openSettings()
     end
     buttons[#buttons + 1] = {
         { text = "Leading -", callback = leading_minus_cb },
-        { text = "Line " .. string.format("%.2f", self.arabic_line_height) },
+        { text = "Line " .. string.format("%.2f", leading_val) },
         { text = "Leading +", callback = leading_plus_cb },
     }
     local rules_row = {
@@ -1320,6 +1328,7 @@ function Reader:init()
     self.arabic_line_height = Settings.get(self.store, "arabic_line_height")
     self.english_font_size = Settings.get(self.store, "english_font_size")
     self.english_line_height = Settings.get(self.store, "english_line_height")
+    self.rows_line_height = Settings.get(self.store, "rows_line_height")
     self.rules_enabled = Settings.get(self.store, "rules_enabled")
     self.display_mode = Settings.get(self.store, "display_mode")
 
