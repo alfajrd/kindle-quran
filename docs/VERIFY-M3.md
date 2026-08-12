@@ -50,11 +50,32 @@ Rename it to match: the plugin looks for those exact filenames, not `itani.db`.
 **Do not commit the pack.** `check_m0.py` S4 asserts git tracks none, and it
 fails the build if one is.
 
-## 3. Settings
+## 3. Where the Mode switch is
 
-The mode defaults to **Arabic only**, so after copying you will see no change
-until you switch. Tap the top centre → **Mode: Arabic only** → it flips to
-"with translation".
+Not in KOReader's menus — it is in the **reader's own** settings dialog.
+
+1. **KOReader menu → More tools → "Qur'an — read …"**. Five entries: last
+   position, plus surahs 1, 2, 9 and 114. (That is the whole navigator until
+   M4; every surah reference in this checklist is chosen from those four.)
+2. With the reader open, **tap the top-centre strip** — the middle half
+   horizontally, top 10% vertically, about 165 px on a PW11:
+
+```
+      x: 25%────────────75%
+        ┌───┬───────────┬───┐
+   y 0% │ ← │  SETTINGS │ → │   top 10%
+        ├───┴───────────┴───┤
+        │   ←back    fwd→   │   taps anywhere else turn pages
+        └───────────────────┘
+```
+
+   Tapping the top *left* pages backwards instead, which is the usual reason
+   the dialog seems not to exist.
+
+3. `Mode:` is the second row, under the position readout.
+
+The mode defaults to **Arabic only**, so nothing looks different until you
+switch it.
 
 If your saved `quran.lua` is old it simply lacks the new keys, and each falls
 back to its default — no reset needed. Delete
@@ -86,9 +107,13 @@ a wrong page is worth more than a description.
 
 ### The basmala
 
-- [ ] **D7** Open **surah 112**. The basmala appears **once**, as a heading
-      spanning both columns above ayah 1 — **not** inside the Arabic of ayah 1,
-      and not on the Arabic side only.
+- [ ] **D7** Open **surah 114 (An-Nās)**. The basmala appears **once**, as a
+      heading spanning both columns above ayah 1 — **not** inside the Arabic of
+      ayah 1, and not on the Arabic side only.
+
+      *114, not 112: there is no navigator until M4, so the menu reaches only
+      surahs 1, 2, 9 and 114. 114 is the shortest of those with a basmala
+      heading, and fits one screen. Surah 2 exercises the same path.*
 - [ ] **D8** Open **surah 1 (Al-Fātiḥah)**. The basmala is **ayah 1, numbered**,
       with its translation beside it. No separate heading.
 - [ ] **D9** Open **surah 9 (At-Tawbah)**. **No basmala at all**, either side.
