@@ -265,6 +265,41 @@ function Nav.showJuzList(opts)
     showMenu("Juz", items)
 end
 
+-- opts = { bookmarks = <array>, surahs = <array|nil>, on_pick, on_delete }
+--
+-- Shows the surah's transliterated name beside the reference when the surah
+-- list is available, because "Al-Baqara 2:255" is a bookmark and "2:255" is a
+-- coordinate. Falls back to the bare reference rather than refusing to list.
+function Nav.showBookmarkList(opts)
+    local list = opts.bookmarks or {}
+    if #list == 0 then
+        showError("no bookmarks yet.\n\nAdd one from the reader: tap the top " ..
+                  "centre of the screen, then \"Bookmark\".")
+        return
+    end
+
+    local names = {}
+    for _, s in ipairs((opts.data and opts.data.surahs) or {}) do
+        names[s.id] = s.name_tr
+    end
+
+    local items = {}
+    for _, b in ipairs(list) do
+        local label = tostring(b.surah) .. ":" .. tostring(b.ayah)
+        if names[b.surah] then
+            label = names[b.surah] .. "  " .. label
+        end
+        if b.note and b.note ~= "" then
+            label = label .. "  -  " .. b.note
+        end
+        items[#items + 1] = {
+            text = label,
+            on_select = function() opts.on_pick(b.surah, b.ayah) end,
+        }
+    end
+    showMenu("Bookmarks", items)
+end
+
 -- opts = { data, initial = "2:255", on_pick = function(surah, ayah) end }
 --
 -- Validates against the PACK's real ayah counts, not just the grammar: 2:300

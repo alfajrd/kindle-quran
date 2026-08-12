@@ -49,6 +49,18 @@ SELF_FIELD_OWNERS = {
 SELF_METHOD_OWNERS = {
     "quranreader.lua": "Reader",
     "main.lua": "Quran",
+    # quranrows is handed the Reader as `self`, so `self:foo()` there must
+    # resolve against Reader too. Omitting it let a typo'd reader method go
+    # unnoticed: X5 counts Reader methods as legitimate names, so a misspelled
+    # one looked like a method rather than a missing field, and nothing else
+    # checked it existed.
+    "quranrows.lua": "Reader",
+}
+
+# Inside these, `self` is a different object and must not be resolved against
+# the file's usual receiver.
+FOREIGN_SELF = {
+    "quranrows.lua": r"^function\s+RowPage[.:]\w+\s*\(.*?^end\s*$",
 }
 
 DEF_RE = re.compile(r"^\s*function\s+([A-Za-z_]\w*)[.:]([A-Za-z_]\w*)\s*\(", re.M)
@@ -157,6 +169,9 @@ def check_self_methods(defs, sources):
         src = sources.get(fname)
         if src is None:
             continue
+        foreign = FOREIGN_SELF.get(fname)
+        if foreign:
+            src = re.sub(foreign, "", src, flags=re.S | re.M)
         known = defs.get(owner, set())
         for m in re.finditer(r"\bself:([A-Za-z_]\w*)\s*\(", src):
             member = m.group(1)
@@ -203,8 +218,14 @@ def check_handover_fields(sources):
     set_in_rows = set(re.findall(r"\bself\.([A-Za-z_]\w*)\s*=", rows))
     # Passed in as constructor opts by main.lua (:new{} becomes self's fields).
     from_opts = {"conn", "tconn", "store", "surah", "ayah", "line", "on_close"}
+    # Reader METHODS. quranrows may call them -- `self` there IS the reader --
+    # and a presence guard (`self.foo and self:foo()`) reads as a field access
+    # to the pattern above. Counting them keeps the check honest without
+    # letting a genuinely missing field through: a method that does not exist
+    # is still absent from this set.
+    reader_methods = set(re.findall(r"^function\s+Reader[.:]([A-Za-z_]\w*)", reader, re.M))
 
-    unset = sorted(needed - set_in_reader - set_in_rows - from_opts)
+    unset = sorted(needed - set_in_reader - set_in_rows - from_opts - reader_methods)
     record("X5", not unset,
            "every self.<field> quranrows.lua reads is set by the reader"
            + ("" if not unset else "  -- NEVER SET: " + ", ".join(unset)))

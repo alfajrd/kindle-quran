@@ -706,6 +706,13 @@ end
 function Reader:buildPageFrom(ayah, sub)
     local items = {}
     local budget = self.lines_per_screen
+    -- The surah header costs one line of the page's budget when it is shown.
+    -- Charged here rather than in layout so the packer never fills a page the
+    -- header then pushes off the bottom.
+    if ayah == 1 and (sub or 0) == 0 and self.lines_per_screen > 1
+       and self.surahHeaderText and self:surahHeaderText() then
+        budget = budget - 1
+    end
     local a, s = ayah, sub or 0
 
     -- Resuming inside an oversized ayah: that sub-page owns the screen.
@@ -848,6 +855,29 @@ function Reader:layoutPage()
         self.page_widgets[#self.page_widgets + 1] = widget
     end
 
+    -- The surah header (SPEC-v1 §6), first child of the page when the page
+    -- starts the surah. buildPageFrom already reserved its line.
+    if self.top_ayah == 1 and self.top_line == 0 then
+        local header = self:surahHeaderText()
+        if header then
+            local ok_hdr, hdr = pcall(function()
+                return TextBoxWidget:new{
+                    text = header,
+                    face = Font:getFace("cfont", self.english_font_size),
+                    width = self.text_width,
+                    height = self.px_per_line,
+                    alignment = "left",
+                    auto_para_direction = false,
+                    para_direction_rtl = false,
+                }
+            end)
+            if ok_hdr and hdr then
+                table.insert(slice_widgets, 1, hdr)
+                self.page_widgets[#self.page_widgets + 1] = hdr
+            end
+        end
+    end
+
     -- STEP P4  stack the slice widgets in a VerticalGroup, no spacing between them
     self.page_group = VerticalGroup:new(slice_widgets)
 
@@ -944,9 +974,16 @@ function Reader:nextPage()
         return
     end
     if self.next_ayah > self.ayah_count then
+        -- Cross-surah paging. The Qur'an is read continuously, so stopping
+        -- dead at the end of a surah made the reader feel like 114 separate
+        -- documents. Only surah 114 is genuinely the end.
+        if self.surah < 114 then
+            self:goTo(self.surah + 1, 1)
+            return
+        end
         UIManager:show(InfoMessage:new{
-            text = "End of surah " .. tostring(self.surah),
-            timeout = 1,
+            text = "End of the Qur'an (surah 114).",
+            timeout = 2,
         })
         return
     end
@@ -962,9 +999,16 @@ function Reader:prevPage()
         return
     end
     if self.top_ayah == 1 and self.top_line == 0 then
+        -- Backwards across a surah boundary lands on the LAST page of the
+        -- previous surah, not its first ayah -- paging back should undo a
+        -- page turn, and jumping to 1 would skip the whole surah.
+        if self.surah > 1 then
+            self:goToLastPageOf(self.surah - 1)
+            return
+        end
         UIManager:show(InfoMessage:new{
-            text = "Start of surah " .. tostring(self.surah),
-            timeout = 1,
+            text = "Start of the Qur'an (surah 1).",
+            timeout = 2,
         })
         return
     end
@@ -1063,6 +1107,7 @@ function Reader:goTo(surah, ayah)
         end
         self.surah = surah
         self.ayah_count = count
+        self:loadSurahMeta()
         if Settings then
             Settings.setLastSurah(self.store, surah)
         end
@@ -1078,6 +1123,145 @@ function Reader:goTo(surah, ayah)
 
     self.top_ayah = ayah
     self.top_line = 0
+    self:savePosition()
+    self:layoutPage()
+    self:refreshFull()
+end
+
+-- Reads the current surah's metadata for the header (SPEC-v1 §6).
+--
+-- Re-read on every surah change rather than cached across them: it is three
+-- short strings and two integers, and a stale header naming the previous surah
+-- is exactly the kind of wrongness a reader notices and cannot explain.
+function Reader:loadSurahMeta()
+    self.surah_name_tr = DB.getSurahName(self.conn, self.surah, "name_tr")
+    self.surah_name_en = DB.getSurahName(self.conn, self.surah, "name_en")
+end
+
+-- "2. Al-Baqara - The Cow    286 ayat - Medinan", or nil if unavailable.
+--
+-- Latin, deliberately, like the ayah reference in the readout: it orients the
+-- reader before the Arabic renders, and the Arabic name is already the first
+-- thing on the page in the form that matters.
+function Reader:surahHeaderText()
+    if not self.surah_name_tr then
+        return nil
+    end
+    local left = tostring(self.surah) .. ". " .. tostring(self.surah_name_tr)
+    if self.surah_name_en and self.surah_name_en ~= "" then
+        left = left .. " - " .. self.surah_name_en
+    end
+    local count = tostring(self.ayah_count) ..
+        (self.ayah_count == 1 and " ayah" or " ayat")
+    return left .. "   (" .. count .. ")"
+end
+
+-- Bookmarks the ayah at the top of the current page (SPEC-v1 §5.6).
+--
+-- The TOP ayah, not "the page", because a bookmark is a reference and a page
+-- is a rendering: the page a reference falls on changes with font size, and a
+-- bookmark that moved when you changed the type would be worthless.
+--
+-- The note is optional and asked for once. Cancelling saves the bookmark
+-- without a note rather than discarding it -- someone who taps Bookmark has
+-- already said what they want, and the note is a refinement.
+function Reader:addBookmark()
+    if not Settings then
+        return
+    end
+    local surah, ayah = self.surah, self.top_ayah
+
+    local function save(note)
+        local ok, how = Settings.addBookmark(self.store, surah, ayah, note)
+        if ok then
+            Settings.flush(self.store)
+        end
+        UIManager:show(InfoMessage:new{
+            text = ok
+                and ("Bookmarked " .. surah .. ":" .. ayah ..
+                     (how == "replaced" and " (replaced)" or ""))
+                or ("Could not bookmark: " .. tostring(how)),
+            timeout = 2,
+        })
+    end
+
+    local ok_dlg, InputDialog = pcall(require, "ui/widget/inputdialog")
+    if not ok_dlg or not InputDialog then
+        save("")
+        return
+    end
+
+    local _, existing = Settings.hasBookmark(self.store, surah, ayah)
+    local dialog
+    local ok_new, built = pcall(function()
+        return InputDialog:new{
+            title = "Bookmark " .. surah .. ":" .. ayah,
+            input = existing or "",
+            input_hint = "note (optional)",
+            buttons = {
+                {
+                    { text = "Cancel", callback = function()
+                        pcall(function() UIManager:close(dialog) end)
+                    end },
+                    { text = "Save", is_enter_default = true, callback = function()
+                        local note
+                        pcall(function() note = dialog:getInputText() end)
+                        pcall(function() UIManager:close(dialog) end)
+                        save(note or "")
+                    end },
+                },
+            },
+        }
+    end)
+    if not ok_new or not built then
+        save("")
+        return
+    end
+    dialog = built
+    if not pcall(function() UIManager:show(dialog) end) then
+        save("")
+        return
+    end
+    pcall(function() dialog:onShowKeyboard() end)
+end
+
+function Reader:openBookmarks()
+    if not Nav or not Settings then
+        return
+    end
+    local data = Nav.loadData(DB, self.conn)
+    Nav.showBookmarkList{
+        bookmarks = Settings.listBookmarks(self.store),
+        data = data,
+        on_pick = function(surah, ayah) self:goTo(surah, ayah) end,
+    }
+end
+
+-- Lands on the LAST page of `surah`, for paging backwards across a boundary.
+--
+-- Derived by walking the forward packer back from the end rather than
+-- computed: page boundaries depend on measured heights, and "the last page"
+-- has no closed form. Bounded so a pathological pack cannot spin -- a surah
+-- has at most 286 ayat, and every step consumes at least one.
+function Reader:goToLastPageOf(surah)
+    self:goTo(surah, 1)
+    if self.surah ~= surah then
+        return   -- goTo already reported why
+    end
+
+    -- Walk to the final ayah, then back up to the top of the page holding it.
+    local last = self.ayah_count
+    local a, s = last, 0
+    if self:isInterleaved() then
+        s = math.max(0, Rows.subPageCount(self, last) - 1)
+        a, s = Rows.topOfPreviousPage(self, last, s + 1)
+    else
+        s = math.max(0, self:subPagesOf(last) - 1)
+        a, s = self:topOfPreviousPage(last, s + 1)
+    end
+
+    self.top_ayah = a
+    self.top_line = s
     self:savePosition()
     self:layoutPage()
     self:refreshFull()
@@ -1366,11 +1550,32 @@ function Reader:openSettings()
         }
     end
 
+    -- Bookmarks. "Bookmark" saves where you are; "Bookmarks" is the list.
+    -- The first says whether this ayah is already saved, so the button is a
+    -- readout as well as an action.
+    local bm_row = nil
+    if Settings then
+        local saved = Settings.hasBookmark(self.store, self.surah, self.top_ayah)
+        bm_row = {
+            { text = saved and "Bookmarked *" or "Bookmark", callback = function()
+                closeDialog()
+                self:addBookmark()
+            end },
+            { text = "Bookmarks", callback = function()
+                closeDialog()
+                self:openBookmarks()
+            end },
+        }
+    end
+
     local buttons = {
         { { text = readout } },
     }
     if nav_row then
         buttons[#buttons + 1] = nav_row
+    end
+    if bm_row then
+        buttons[#buttons + 1] = bm_row
     end
     buttons[#buttons + 1] = mode_row
     buttons[#buttons + 1] = {
@@ -1583,6 +1788,7 @@ function Reader:init()
         return
     end
     self.ayah_count = ayah_count
+    self:loadSurahMeta()
 
     -- Validate the requested starting position (edge cases 10-12).
     local ayah = self.ayah

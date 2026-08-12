@@ -40,9 +40,9 @@ MUST-VERIFY (device)
       relied on by the Arabic-only pager (V25)", which sounded like
       corroboration and was an assumption: V25 had never been exercised
       either, because the only surah read on device was Al-Fatiha and none of
-      its ayat is long enough to need slicing. **Arabic-only mode has the same
-      defect and it is not yet fixed** -- quranreader.lua's STEP P3 still
-      passes top_line_num.
+      its ayat is long enough to need slicing. Arabic-only mode had the same
+      defect; it was fixed in a902379, which had to change its whole
+      pagination model to make the scroll step uniform.
   V42 Two `TextBoxWidget`s painted at different x within one parent do not
       interfere. Each owns its blitbuffer and blits opaquely (that opacity is
       what forced the paint-order fix in quranreader.lua), so the columns must
@@ -472,15 +472,35 @@ function Rows.buildPage(self, ayah, sub)
     local items = {}
     local budget = self.text_height
 
-    -- The basmala heading, above ayah 1 of every surah but 1 and 9. It spans
-    -- both columns rather than being a row (§9.1), and it is drawn only at
-    -- the true top of the surah, never when resuming mid-ayah.
-    if ayah == 1 and (sub or 0) == 0 and self.surah ~= 1 and self.surah ~= 9
-       and self.basmala_ar and self.basmala_ar ~= "" then
-        local h = self.row_pitch_ar + self.row_pitch_en + Rows.BASMALA_GAP_PX
-        if h < budget then
-            items[#items + 1] = { kind = "basmala", height = h }
-            budget = budget - h
+    -- The surah heading: the name line (SPEC-v1 §6) and, below it, the basmala
+    -- for every surah but 1 and 9 (§9.1). Both span the full width rather than
+    -- sitting in a column, and both appear only at the true top of the surah,
+    -- never when resuming mid-ayah.
+    --
+    -- Note the two are separate conditions. Surah 1 and 9 still get a NAME --
+    -- an earlier version skipped the whole block for them, which silently made
+    -- Al-Fatiha and At-Tawbah the only surahs opening with no header at all.
+    if ayah == 1 and (sub or 0) == 0 then
+        local header = self.surahHeaderText and self:surahHeaderText() or nil
+        local wants_basmala = self.surah ~= 1 and self.surah ~= 9
+            and self.basmala_ar and self.basmala_ar ~= ""
+        if header or wants_basmala then
+            local h = Rows.BASMALA_GAP_PX
+            if header then
+                h = h + self.row_pitch_en
+            end
+            if wants_basmala then
+                h = h + self.row_pitch_ar + self.row_pitch_en
+            end
+            if h < budget then
+                items[#items + 1] = {
+                    kind = "heading",
+                    height = h,
+                    header = header,
+                    basmala = wants_basmala or nil,
+                }
+                budget = budget - h
+            end
         end
     end
 
@@ -505,7 +525,7 @@ function Rows.buildPage(self, ayah, sub)
             items[#items + 1] = { kind = "row", ayah = a, sub = 0, of = 1 }
             budget = budget - need
             a = a + 1
-        elseif #items == 0 or (#items == 1 and items[1].kind == "basmala") then
+        elseif #items == 0 or (#items == 1 and items[1].kind == "heading") then
             -- Case 2: this ayah cannot fit a page even alone. Split it rather
             -- than looping forever or dropping it. 2:282 is the case that
             -- forces this to exist and the one to test it against.
@@ -592,11 +612,17 @@ function RowPage:paintTo(bb, x, y)
     local colour = ruleColour()
     local cy = y
     for _, item in ipairs(self.items or {}) do
-        if item.kind == "basmala" then
-            if item.ar then item.ar:paintTo(bb, x, cy) end
-            if item.en then
-                item.en:paintTo(bb, x, cy + (item.ar_h or 0))
+        if item.kind == "heading" then
+            local hy = cy
+            if item.hdr then
+                item.hdr:paintTo(bb, x, hy)
+                hy = hy + (item.hdr_h or 0)
             end
+            if item.ar then
+                item.ar:paintTo(bb, x, hy)
+                hy = hy + (item.ar_h or 0)
+            end
+            if item.en then item.en:paintTo(bb, x, hy) end
             cy = cy + item.height
         else
             local ar_x = x + self.col_width + Rows.COLUMN_GUTTER_PX
@@ -641,13 +667,20 @@ function Rows.layout(self, page)
     end
 
     for _, item in ipairs(page.items) do
-        if item.kind == "basmala" then
-            item.ar = box(self.basmala_ar, Rows.arabicFace(self), self.text_width,
-                          Rows.arabicLeading(self), true, nil, nil)
-            item.ar_h = self.row_pitch_ar
-            if self.basmala_en and self.basmala_en ~= "" then
-                item.en = box(self.basmala_en, Rows.englishFace(self), self.text_width,
-                              self.english_line_height, false, nil, nil)
+        if item.kind == "heading" then
+            if item.header then
+                item.hdr = box(item.header, Rows.englishFace(self), self.text_width,
+                               self.english_line_height, false, nil, nil)
+                item.hdr_h = self.row_pitch_en
+            end
+            if item.basmala then
+                item.ar = box(self.basmala_ar, Rows.arabicFace(self), self.text_width,
+                              Rows.arabicLeading(self), true, nil, nil)
+                item.ar_h = self.row_pitch_ar
+                if self.basmala_en and self.basmala_en ~= "" then
+                    item.en = box(self.basmala_en, Rows.englishFace(self), self.text_width,
+                                  self.english_line_height, false, nil, nil)
+                end
             end
         else
             local ar, ar_err = Rows.arabicText(self, item.ayah)

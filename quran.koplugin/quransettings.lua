@@ -283,6 +283,106 @@ function Settings.setLastSurah(store, surah)
     ls_save(store, "last_surah", surah)
 end
 
+-- ---------------------------------------------------------------------------
+-- Bookmarks (SPEC-v1 §5.6)
+-- ---------------------------------------------------------------------------
+--
+-- A list, not a map keyed by reference: order of addition is meaningful to a
+-- reader ("where was I last week") and a map would lose it.
+--
+-- Every read is validated the same way positions are (V32). A settings file
+-- that has been hand-edited, truncated or written by a future version must
+-- degrade to "no bookmarks" rather than to a crash or an invented reference --
+-- a bookmark that silently points somewhere else is worse than one that is
+-- gone, because the reader trusts it.
+
+Settings.MAX_BOOKMARKS = 200
+
+local function validBookmark(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    local surah, ayah = entry.surah, entry.ayah
+    if type(surah) ~= "number" or surah ~= math.floor(surah) or surah < 1 or surah > 114 then
+        return nil
+    end
+    if type(ayah) ~= "number" or ayah ~= math.floor(ayah) or ayah < 1 then
+        return nil
+    end
+    local note = entry.note
+    if type(note) ~= "string" then
+        note = ""
+    end
+    return { surah = surah, ayah = ayah, note = note }
+end
+
+-- -> array, never nil. Invalid entries are dropped, not repaired.
+function Settings.listBookmarks(store)
+    local raw = ls_read(store, "bookmarks")
+    local out = {}
+    if type(raw) ~= "table" then
+        return out
+    end
+    for _, entry in ipairs(raw) do
+        local ok = validBookmark(entry)
+        if ok then
+            out[#out + 1] = ok
+        end
+    end
+    return out
+end
+
+-- Adding an existing reference REPLACES it rather than duplicating, so a
+-- reader who bookmarks the same ayah twice ends up with one entry carrying
+-- their latest note.
+function Settings.addBookmark(store, surah, ayah, note)
+    local entry = validBookmark({ surah = surah, ayah = ayah, note = note })
+    if not entry then
+        return false, "invalid reference"
+    end
+    if not store.ls then
+        return false, "settings persistence is unavailable"
+    end
+    local list = Settings.listBookmarks(store)
+    for i, b in ipairs(list) do
+        if b.surah == entry.surah and b.ayah == entry.ayah then
+            list[i] = entry
+            ls_save(store, "bookmarks", list)
+            return true, "replaced"
+        end
+    end
+    if #list >= Settings.MAX_BOOKMARKS then
+        return false, "the bookmark list is full (" .. Settings.MAX_BOOKMARKS .. ")"
+    end
+    list[#list + 1] = entry
+    ls_save(store, "bookmarks", list)
+    return true, "added"
+end
+
+function Settings.removeBookmark(store, surah, ayah)
+    if not store.ls then
+        return false
+    end
+    local list = Settings.listBookmarks(store)
+    for i, b in ipairs(list) do
+        if b.surah == surah and b.ayah == ayah then
+            table.remove(list, i)
+            ls_save(store, "bookmarks", list)
+            return true
+        end
+    end
+    return false
+end
+
+function Settings.hasBookmark(store, surah, ayah)
+    for _, b in ipairs(Settings.listBookmarks(store)) do
+        if b.surah == surah and b.ayah == ayah then
+            return true, b.note
+        end
+    end
+    return false, nil
+end
+
 -- No-op unless dirty.
 function Settings.flush(store)
     if store.dirty and store.ls then
